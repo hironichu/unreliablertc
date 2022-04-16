@@ -3,11 +3,14 @@
 <head>
     <meta charset="utf-8" /> 
     <title>WebRTC Data Channel Echo Server Example</title>
-    <script>
+</head>
+<body>
+	<input type="button" value="Start SDP" id="setready" >
+	<p id="offer"></p>
+    <script type="module">
         let NUM_PACKETS = 20;
         let SEND_INTERVAL = 500;
-        let SESSION_ADDRESS = "/new_rtc_session";
-
+		var sdp = "";
         let peer = new RTCPeerConnection({
             iceServers: [{
                 urls: ["stun:stun.l.google.com:19302"]
@@ -62,32 +65,42 @@
                 console.log("all local candidates received");
             }
         };
+		const setready = document.getElementById("setready");
+		setready.addEventListener("click", async function(){
+			const offer = await peer.createOffer().then(function(offer) {
+            	peer.setLocalDescription(offer);
+				return offer.sdp;
+        	})
+			console.log(offer)
+			document.getElementById("setready").remove();
+			//add the offer to the page
+			document.getElementById("offer").innerHTML = sdp;
 
-        peer.createOffer().then(function(offer) {
-            return peer.setLocalDescription(offer);
-        }).then(function() {
-            var request = new XMLHttpRequest();
-            request.open("POST", SESSION_ADDRESS);
-            request.onload = function() {
-                if (request.status == 200) {
-                    var response = JSON.parse(request.responseText);
-                    peer.setRemoteDescription(new RTCSessionDescription(response.answer)).then(function() {
-                        var candidate = new RTCIceCandidate(response.candidate);
-                        peer.addIceCandidate(candidate).then(function() {
-                            console.log("add ice candidate success");
-                        }).catch(function(err) {
-                            console.log("error during 'addIceCandidate':", err);
-                        });
-                    }).catch(function(e) {
-                        console.log("error during 'setRemoteDescription':", e);
-                    });
-                }
-            };
-            request.send(peer.localDescription.sdp);
-        }).catch(function(reason) {
-            console.log("error during 'createOffer':", reason);
-        });
+			var input = document.createElement("input");
+			input.type = "text";
+			input.id = "sdp";
+			document.body.appendChild(input);
+			//Add a Send input to send the sdp
+			var send = document.createElement("input");
+			send.type = "button";
+			send.value = "Send";
+			send.onclick = function() {
+				sdp = JSON.parse(document.getElementById("sdp").value);
+				peer.setRemoteDescription(new RTCSessionDescription(sdp.answer)).then(function() {
+					var candidate = new RTCIceCandidate(sdp.candidate);
+					peer.addIceCandidate(candidate).then(function() {
+						console.log("add ice candidate success");
+					}).catch(function(err) {
+						console.log("error during 'addIceCandidate':", err);
+					});
+				}).catch(function(e) {
+					console.log("error during 'setRemoteDescription':", e);
+				});
+			};
+			document.body.appendChild(send);
+		})
+
+		
     </script>
-</head>
-<body></body>
+</body>
 </html>

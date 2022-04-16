@@ -47,14 +47,21 @@ truly runtime agnostic.
 ## Running the example
 
 In a terminal: 
+> NOTE FROM THIS FORK
+
+This fork has been modified in order to not accept the SDP session as a body but as a String to be passed into a function.
+I've also added a function to parse the SDP session from the Webrtc-rs crate, this is because I'd want to also implement
+the DTLS crate to be able to send and receive DTLS packets instead of OpenSSL.
 
 ```
-$ cargo run --example echo_server -- --data 127.0.0.1:42424 --http 127.0.0.1:8080 --public 127.0.0.1:42424
+$ cargo run --example echo_server -- --data 127.0.0.1:42424  --public 127.0.0.1:42424 --sdp "<insert the sdp you get from your client>"
 ```
 
-Then, using a web browser, go to 'http://127.0.0.1:8080/index.html'. Open the
+~~Then, using a web browser, go to 'http://127.0.0.1:8080/index.html'. Open the
 debug console, if everything is working correctly you should see messages being
-sent and received.
+sent and received.~~
+
+This example is no longer valid 
 
 Please note that if you are using Firefox, Firefox does not accept WebRTC
 connections to 127.0.0.1, so you may need to use a different IP address.

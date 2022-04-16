@@ -1,11 +1,4 @@
 use clap::{Arg, Command};
-use hyper::{
-    header::{self, HeaderValue},
-    server::{conn::AddrStream, Server},
-    service::{make_service_fn, service_fn},
-    Body, Error, Method, Response, StatusCode,
-};
-
 use webrtc_unreliable::Server as RtcServer;
 
 #[tokio::main]
@@ -30,12 +23,12 @@ async fn main() {
                 .help("advertise the given address/port as the public WebRTC address/port"),
         )
         .arg(
-            Arg::new("http")
-                .short('h')
-                .long("http")
+            Arg::new("sdp")
+                .short('s')
+                .long("sdp")
                 .takes_value(true)
                 .required(true)
-                .help("listen on the specified address/port for incoming HTTP (session reqeusts and test page"),
+                .help("SDP test"),
         )
         .get_matches();
 
@@ -51,63 +44,21 @@ async fn main() {
         .parse()
         .expect("could not parse advertised public WebRTC data address/port");
 
-    let session_listen_addr = matches
-        .value_of("http")
-        .unwrap()
-        .parse()
-        .expect("could not parse HTTP address/port");
+    let sdp = matches.value_of("sdp").unwrap();
 
     let mut rtc_server = RtcServer::new(webrtc_listen_addr, public_webrtc_addr)
         .await
         .expect("could not start RTC server");
 
-    let session_endpoint = rtc_server.session_endpoint();
-    let make_svc = make_service_fn(move |addr_stream: &AddrStream| {
-        let session_endpoint = session_endpoint.clone();
-        let remote_addr = addr_stream.remote_addr();
-        async move {
-            Ok::<_, Error>(service_fn(move |req| {
-                let mut session_endpoint = session_endpoint.clone();
-                async move {
-                    if req.uri().path() == "/"
-                        || req.uri().path() == "/index.html" && req.method() == Method::GET
-                    {
-                        log::info!("serving example index HTML to {}", remote_addr);
-                        Response::builder().body(Body::from(include_str!("./echo_server.html")))
-                    } else if req.uri().path() == "/new_rtc_session" && req.method() == Method::POST
-                    {
-                        log::info!("WebRTC session request from {}", remote_addr);
-                        match session_endpoint.http_session_request(req.into_body()).await {
-                            Ok(mut resp) => {
-                                resp.headers_mut().insert(
-                                    header::ACCESS_CONTROL_ALLOW_ORIGIN,
-                                    HeaderValue::from_static("*"),
-                                );
-                                Ok(resp.map(Body::from))
-                            }
-                            Err(err) => {
-                                log::warn!("bad rtc session request: {:?}", err);
-                                Response::builder()
-                                    .status(StatusCode::BAD_REQUEST)
-                                    .body(Body::from(format!("error: {:?}", err)))
-                            }
-                        }
-                    } else {
-                        Response::builder()
-                            .status(StatusCode::NOT_FOUND)
-                            .body(Body::from("not found"))
-                    }
-                }
-            }))
+    let mut session_endpoint = rtc_server.session_endpoint();
+    match session_endpoint.session_request(sdp).await {
+        Ok(session) => {
+            println!("Copy this SDP to the client: {}", session);
         }
-    });
-
-    tokio::spawn(async move {
-        Server::bind(&session_listen_addr)
-            .serve(make_svc)
-            .await
-            .expect("HTTP session server has died");
-    });
+        Err(e) => {
+            println!("session failed: {}", e);
+        }
+    }
 
     let mut message_buf = Vec::new();
     loop {

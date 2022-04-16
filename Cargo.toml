@@ -17,14 +17,13 @@ crc = "2"
 futures-channel = { version = "0.3", features = ["sink"] }
 futures-core = { version = "0.3" }
 futures-util = { version = "0.3", features = ["sink"] }
-http = "0.2"
 log = "0.4"
 openssl = "0.10"
 rand = "0.8"
+sdp = {git = "https://github.com/webrtc-rs/sdp"}
 
 [dev-dependencies]
 clap = "3.0"
 env_logger = "0.9"
 futures = { version = "0.3" }
-hyper = { version = "0.14", features = ["http1", "runtime", "server", "stream"] }
 tokio = { version = "1.0", features = ["macros", "net", "rt-multi-thread"] }

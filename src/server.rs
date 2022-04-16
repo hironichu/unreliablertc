@@ -12,9 +12,7 @@ use std::{
 
 use async_io::Async;
 use futures_channel::mpsc;
-use futures_core::Stream;
 use futures_util::{pin_mut, select, FutureExt, SinkExt, StreamExt};
-use http::{header, Response};
 use openssl::ssl::SslAcceptor;
 use rand::thread_rng;
 
@@ -66,14 +64,14 @@ pub enum SessionError {
     /// `SessionEndpoint` has beeen disconnected from its `Server` (the `Server` has been dropped).
     Disconnected,
     /// An error streaming the SDP descriptor
-    StreamError(Box<dyn Error + Send + Sync + 'static>),
+    ParseError(Box<dyn Error + 'static>),
 }
 
 impl fmt::Display for SessionError {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self {
             SessionError::Disconnected => write!(f, "`SessionEndpoint` disconnected from `Server`"),
-            SessionError::StreamError(e) => {
+            SessionError::ParseError(e) => {
                 write!(f, "error streaming the incoming SDP descriptor: {}", e)
             }
         }
@@ -84,7 +82,7 @@ impl Error for SessionError {
     fn source(&self) -> Option<&(dyn Error + 'static)> {
         match self {
             SessionError::Disconnected => None,
-            SessionError::StreamError(e) => Some(e.as_ref()),
+            SessionError::ParseError(e) => Some(e.as_ref()),
         }
     }
 }
@@ -128,21 +126,12 @@ impl SessionEndpoint {
     /// The returned JSON object contains a digest of the x509 certificate the server will use for
     /// DTLS, and the browser will ensure that this digest matches before starting a WebRTC
     /// connection.
-    pub async fn session_request<I, E, S>(
-        &mut self,
-        sdp_descriptor: S,
-    ) -> Result<String, SessionError>
-    where
-        I: AsRef<[u8]>,
-        E: Error + Send + Sync + 'static,
-        S: Stream<Item = Result<I, E>>,
-    {
+    pub async fn session_request(&mut self, sdp_descriptor: &str) -> Result<String, SessionError> {
         const SERVER_USER_LEN: usize = 12;
         const SERVER_PASSWD_LEN: usize = 24;
 
-        let SdpFields { ice_ufrag, mid, .. } = parse_sdp_fields(sdp_descriptor)
-            .await
-            .map_err(|e| SessionError::StreamError(e.into()))?;
+        let SdpFields { ice_ufrag, mid, .. } =
+            parse_sdp_fields(sdp_descriptor).map_err(|e| SessionError::ParseError(e.into()))?;
 
         let (incoming_session, response) = {
             let mut rng = thread_rng();
@@ -174,24 +163,6 @@ impl SessionEndpoint {
             .await
             .map_err(|_| SessionError::Disconnected)?;
         Ok(response)
-    }
-
-    /// Convenience method which returns an `http::Response` rather than a JSON string, with the
-    /// correct format headers.
-    pub async fn http_session_request<I, E, S>(
-        &mut self,
-        sdp_descriptor: S,
-    ) -> Result<Response<String>, SessionError>
-    where
-        I: AsRef<[u8]>,
-        E: Error + Send + Sync + 'static,
-        S: Stream<Item = Result<I, E>>,
-    {
-        let r = self.session_request(sdp_descriptor).await?;
-        Ok(Response::builder()
-            .header(header::CONTENT_TYPE, "application/json")
-            .body(r)
-            .expect("could not construct session response"))
     }
 }
 
