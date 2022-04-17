@@ -1,8 +1,8 @@
 use std::{
-    future::Future,
-    pin::Pin,
-    task::{Context, Poll},
-    time::{Duration, Instant},
+  future::Future,
+  pin::Pin,
+  task::{Context, Poll},
+  time::{Duration, Instant},
 };
 
 use async_io::Timer;
@@ -16,31 +16,31 @@ use futures_core::Stream;
 /// to generate more events to catch up.  The target rate is the *fastest* rate the stream will run,
 /// it may run slower.
 pub struct Interval {
-    duration: Duration,
-    timer: Timer,
+  duration: Duration,
+  timer: Timer,
 }
 
 impl Interval {
-    /// Create a new `Interval` stream where events are `duration` apart.
-    pub fn new(duration: Duration) -> Interval {
-        Interval {
-            duration,
-            timer: Timer::after(duration),
-        }
+  /// Create a new `Interval` stream where events are `duration` apart.
+  pub fn new(duration: Duration) -> Interval {
+    Interval {
+      duration,
+      timer: Timer::after(duration),
     }
+  }
 }
 
 impl Stream for Interval {
-    type Item = Instant;
+  type Item = Instant;
 
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let Self { duration, timer } = &mut *self;
-        match Pin::new(&mut *timer).poll(cx) {
-            Poll::Ready(instant) => {
-                timer.set_after(*duration);
-                Poll::Ready(Some(instant))
-            }
-            Poll::Pending => Poll::Pending,
-        }
+  fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+    let Self { duration, timer } = &mut *self;
+    match Pin::new(&mut *timer).poll(cx) {
+      Poll::Ready(instant) => {
+        timer.set_after(*duration);
+        Poll::Ready(Some(instant))
+      }
+      Poll::Pending => Poll::Pending,
     }
+  }
 }

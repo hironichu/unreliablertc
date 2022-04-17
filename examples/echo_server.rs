@@ -3,84 +3,84 @@ use webrtc_unreliable::Server as RtcServer;
 
 #[tokio::main]
 async fn main() {
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
+  env_logger::init_from_env(env_logger::Env::new().default_filter_or("debug"));
 
-    let matches = Command::new("echo_server")
-        .arg(
-            Arg::new("data")
-                .short('d')
-                .long("data")
-                .takes_value(true)
-                .required(true)
-                .help("listen on the specified address/port for UDP WebRTC data channels"),
-        )
-        .arg(
-            Arg::new("public")
-                .short('p')
-                .long("public")
-                .takes_value(true)
-                .required(true)
-                .help("advertise the given address/port as the public WebRTC address/port"),
-        )
-        .arg(
-            Arg::new("sdp")
-                .short('s')
-                .long("sdp")
-                .takes_value(true)
-                .required(true)
-                .help("SDP test"),
-        )
-        .get_matches();
+  let matches = Command::new("echo_server")
+    .arg(
+      Arg::new("data")
+        .short('d')
+        .long("data")
+        .takes_value(true)
+        .required(true)
+        .help("listen on the specified address/port for UDP WebRTC data channels"),
+    )
+    .arg(
+      Arg::new("public")
+        .short('p')
+        .long("public")
+        .takes_value(true)
+        .required(true)
+        .help("advertise the given address/port as the public WebRTC address/port"),
+    )
+    .arg(
+      Arg::new("sdp")
+        .short('s')
+        .long("sdp")
+        .takes_value(true)
+        .required(true)
+        .help("SDP test"),
+    )
+    .get_matches();
 
-    let webrtc_listen_addr = matches
-        .value_of("data")
-        .unwrap()
-        .parse()
-        .expect("could not parse WebRTC data address/port");
+  let webrtc_listen_addr = matches
+    .value_of("data")
+    .unwrap()
+    .parse()
+    .expect("could not parse WebRTC data address/port");
 
-    let public_webrtc_addr = matches
-        .value_of("public")
-        .unwrap()
-        .parse()
-        .expect("could not parse advertised public WebRTC data address/port");
+  let public_webrtc_addr = matches
+    .value_of("public")
+    .unwrap()
+    .parse()
+    .expect("could not parse advertised public WebRTC data address/port");
 
-    let sdp = matches.value_of("sdp").unwrap();
+  let sdp = matches.value_of("sdp").unwrap();
 
-    let mut rtc_server = RtcServer::new(webrtc_listen_addr, public_webrtc_addr)
+  let mut rtc_server = RtcServer::new(webrtc_listen_addr, public_webrtc_addr)
+    .await
+    .expect("could not start RTC server");
+
+  let mut session_endpoint = rtc_server.session_endpoint();
+  match session_endpoint.session_request(sdp) {
+    Ok(session) => {
+      println!("Copy this SDP to the client: {}", session);
+    }
+    Err(e) => {
+      println!("session failed: {}", e);
+    }
+  }
+
+  let mut message_buf = Vec::new();
+  loop {
+    let received = match rtc_server.recv().await {
+      Ok(received) => {
+        message_buf.clear();
+        message_buf.extend(received.message.as_ref());
+        Some((received.message_type, received.remote_addr))
+      }
+      Err(err) => {
+        log::warn!("could not receive RTC message: {:?}", err);
+        None
+      }
+    };
+
+    if let Some((message_type, remote_addr)) = received {
+      if let Err(err) = rtc_server
+        .send(&message_buf, message_type, &remote_addr)
         .await
-        .expect("could not start RTC server");
-
-    let mut session_endpoint = rtc_server.session_endpoint();
-    match session_endpoint.session_request(sdp).await {
-        Ok(session) => {
-            println!("Copy this SDP to the client: {}", session);
-        }
-        Err(e) => {
-            println!("session failed: {}", e);
-        }
+      {
+        log::warn!("could not send message to {}: {:?}", remote_addr, err);
+      }
     }
-
-    let mut message_buf = Vec::new();
-    loop {
-        let received = match rtc_server.recv().await {
-            Ok(received) => {
-                message_buf.clear();
-                message_buf.extend(received.message.as_ref());
-                Some((received.message_type, received.remote_addr))
-            }
-            Err(err) => {
-                log::warn!("could not receive RTC message: {:?}", err);
-                None
-            }
-        };
-
-        if let Some((message_type, remote_addr)) = received {
-            if let Err(err) = rtc_server
-                .send(&message_buf, message_type, &remote_addr)
-                .await
-            {
-                log::warn!("could not send message to {}: {:?}", remote_addr, err);
-            }
-        }
-    }
+  }
 }
