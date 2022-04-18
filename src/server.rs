@@ -374,20 +374,19 @@ impl Server {
       pin_mut!(timer_next);
 
       select! {
-            incoming_session = self.incoming_session_stream.next() => {
-      println!("incoming session");
-                Next::IncomingSession(
-                    incoming_session.expect("connection to SessionEndpoint has closed")
-                )
-            }
-            res = recv_udp => {
-                let (len, remote_addr) = res?;
-                Next::IncomingPacket(len, remote_addr)
-            }
-            _ = timer_next => {
-                Next::PeriodicTimer
-            }
-        }
+          incoming_session = self.incoming_session_stream.next() => {
+              Next::IncomingSession(
+                  incoming_session.expect("connection to SessionEndpoint has closed")
+              )
+          }
+          res = recv_udp => {
+              let (len, remote_addr) = res?;
+              Next::IncomingPacket(len, remote_addr)
+          }
+          _ = timer_next => {
+              Next::PeriodicTimer
+          }
+      }
     };
 
     match next {
