@@ -21,7 +21,6 @@ futures = { version = "0.3" }
 log = "0.4"
 openssl = "0.10"
 rand = "0.8"
-sdp = {git = "https://github.com/webrtc-rs/sdp"}
 
 [dev-dependencies]
 clap = "3.0"

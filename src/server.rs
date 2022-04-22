@@ -1,4 +1,3 @@
-#![feature(async_closure)]
 use std::{
   collections::{hash_map::Entry as HashMapEntry, HashMap, VecDeque},
   convert::AsRef,
@@ -7,7 +6,7 @@ use std::{
   io::{Error as IoError, ErrorKind as IoErrorKind},
   net::{SocketAddr, UdpSocket},
   ops::Deref,
-  sync::{Arc, Mutex},
+  sync::Arc,
   time::{Duration, Instant},
 };
 
@@ -158,7 +157,7 @@ impl SessionEndpoint {
 
       (incoming_session, response)
     };
-
+	println!("Incoming SESSION");
     let incoming_session = incoming_session;
     let mut session_sender = self.session_sender.clone();
     let handler =
@@ -523,6 +522,7 @@ impl Server {
         if session.ttl.elapsed() < RTC_SESSION_TIMEOUT {
           true
         } else {
+		 println!("SESSION TIMEOUT !1?\n");
           log::info!(
             "session timeout for server user '{}' and remote user '{}'",
             session_key.server_user,
@@ -566,9 +566,9 @@ impl Server {
   }
 }
 
-const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
-const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
-const CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
+const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60);
+const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(60);
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
 const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_secs(1);
 const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_secs(1);
 
