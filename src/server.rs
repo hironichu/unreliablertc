@@ -157,12 +157,13 @@ impl SessionEndpoint {
 
       (incoming_session, response)
     };
-    println!("Incoming SESSION");
+
     let incoming_session = incoming_session;
     let mut session_sender = self.session_sender.clone();
     let handler =
       futures::executor::block_on(async move { session_sender.send(incoming_session).await });
     if handler.is_err() {
+		println!("SessionEndpoint::session_request: session_sender.send() failed");
       return Err(SessionError::Disconnected);
     }
     Ok(response)
@@ -528,7 +529,6 @@ impl Server {
         if session.ttl.elapsed() < RTC_SESSION_TIMEOUT {
           true
         } else {
-          println!("SESSION TIMEOUT !1?\n");
           log::info!(
             "session timeout for server user '{}' and remote user '{}'",
             session_key.server_user,
