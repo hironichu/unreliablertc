@@ -14,11 +14,11 @@ pub fn parse_sdp_fields(body: &str) -> Result<SdpFields, Error> {
   const MAX_SDP_LINE: usize = 512;
 
   fn after_prefix<'a>(s: &'a [u8], prefix: &[u8]) -> Option<&'a [u8]> {
-	  if s.starts_with(prefix) {
-		  Some(&s[prefix.len()..])
-	  } else {
-		  None
-	  }
+    if s.starts_with(prefix) {
+      Some(&s[prefix.len()..])
+    } else {
+      None
+    }
   }
   let mut line_buf = Vec::new();
   line_buf.reserve(MAX_SDP_LINE);
@@ -26,66 +26,66 @@ pub fn parse_sdp_fields(body: &str) -> Result<SdpFields, Error> {
   let mut found_ice_passwd = None;
   let mut found_mid = None;
   for &c in reader.as_ref() {
-	if c == b'\r' || c == b'\n' {
-		if !line_buf.is_empty() {
-			if let Some(ice_ufrag) = after_prefix(&line_buf, b"a=ice-ufrag:") {
-				found_ice_ufrag = Some(String::from_utf8(ice_ufrag.to_vec())?);
-			}
-			if let Some(ice_passwd) = after_prefix(&line_buf, b"a=ice-pwd:") {
-				found_ice_passwd = Some(String::from_utf8(ice_passwd.to_vec())?);
-			}
-			if let Some(mid) = after_prefix(&line_buf, b"a=mid:") {
-				found_mid = Some(String::from_utf8(mid.to_vec())?);
-			}
-			line_buf.clear();
-		}
-	} else {
-		if line_buf.len() < MAX_SDP_LINE {
-			line_buf.push(c);
-		}
-	}
-	};
-    match (found_ice_ufrag, found_ice_passwd, found_mid) {
-        (Some(ice_ufrag), Some(ice_passwd), Some(mid)) => Ok(SdpFields {
-            ice_ufrag,
-            ice_passwd,
-            mid,
-        }),
-        _ => Err("not all SDP fields provided".into()),
+    if c == b'\r' || c == b'\n' {
+      if !line_buf.is_empty() {
+        if let Some(ice_ufrag) = after_prefix(&line_buf, b"a=ice-ufrag:") {
+          found_ice_ufrag = Some(String::from_utf8(ice_ufrag.to_vec())?);
+        }
+        if let Some(ice_passwd) = after_prefix(&line_buf, b"a=ice-pwd:") {
+          found_ice_passwd = Some(String::from_utf8(ice_passwd.to_vec())?);
+        }
+        if let Some(mid) = after_prefix(&line_buf, b"a=mid:") {
+          found_mid = Some(String::from_utf8(mid.to_vec())?);
+        }
+        line_buf.clear();
+      }
+    } else {
+      if line_buf.len() < MAX_SDP_LINE {
+        line_buf.push(c);
+      }
     }
-//   let sdp = SessionDescription::unmarshal(&mut reader);
-//   match sdp {
-//     Ok(sdp) => {
-//       let media = sdp.media_descriptions;
-//       match media.first() {
-// 		Some(media) => {
-// 			let ice_ufrag = match media.attribute("ice-ufrag") {
-// 				Some(ice_ufrag) => ice_ufrag,
-// 				None => None,
-// 			};
-// 			let ice_passwd = match media.attribute("ice-pwd") {
-// 				Some(ice_passwd) => ice_passwd,
-// 				None => None,
-// 			};
-// 			let mid = match media.attribute("mid") {
-// 				Some(mid) => mid,
-// 				None => None,
-// 			};
-// 			if ice_ufrag.is_some() && ice_passwd.is_some() && mid.is_some() {
-// 				Ok(SdpFields {
-// 					ice_ufrag: mid.unwrap().to_string(),
-// 					ice_passwd: ice_passwd.unwrap().to_string(),
-// 					mid: mid.unwrap().to_string(),
-// 				})
-// 			} else {
-// 				Err(format!("ice-ufrag, ice-passwd or mid not found in sdp").into())
-// 			}
-// 		},
-// 		None => Err(format!("no media found in sdp").into())
-//       }
-//     }
-//     Err(e) => return Err(Box::new(e)),
-//   }
+  }
+  match (found_ice_ufrag, found_ice_passwd, found_mid) {
+    (Some(ice_ufrag), Some(ice_passwd), Some(mid)) => Ok(SdpFields {
+      ice_ufrag,
+      ice_passwd,
+      mid,
+    }),
+    _ => Err("not all SDP fields provided".into()),
+  }
+  //   let sdp = SessionDescription::unmarshal(&mut reader);
+  //   match sdp {
+  //     Ok(sdp) => {
+  //       let media = sdp.media_descriptions;
+  //       match media.first() {
+  // 		Some(media) => {
+  // 			let ice_ufrag = match media.attribute("ice-ufrag") {
+  // 				Some(ice_ufrag) => ice_ufrag,
+  // 				None => None,
+  // 			};
+  // 			let ice_passwd = match media.attribute("ice-pwd") {
+  // 				Some(ice_passwd) => ice_passwd,
+  // 				None => None,
+  // 			};
+  // 			let mid = match media.attribute("mid") {
+  // 				Some(mid) => mid,
+  // 				None => None,
+  // 			};
+  // 			if ice_ufrag.is_some() && ice_passwd.is_some() && mid.is_some() {
+  // 				Ok(SdpFields {
+  // 					ice_ufrag: mid.unwrap().to_string(),
+  // 					ice_passwd: ice_passwd.unwrap().to_string(),
+  // 					mid: mid.unwrap().to_string(),
+  // 				})
+  // 			} else {
+  // 				Err(format!("ice-ufrag, ice-passwd or mid not found in sdp").into())
+  // 			}
+  // 		},
+  // 		None => Err(format!("no media found in sdp").into())
+  //       }
+  //     }
+  //     Err(e) => return Err(Box::new(e)),
+  //   }
 }
 
 pub fn gen_sdp_response<R: Rng>(

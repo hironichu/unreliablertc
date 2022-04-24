@@ -157,7 +157,7 @@ impl SessionEndpoint {
 
       (incoming_session, response)
     };
-	println!("Incoming SESSION");
+    println!("Incoming SESSION");
     let incoming_session = incoming_session;
     let mut session_sender = self.session_sender.clone();
     let handler =
@@ -268,7 +268,7 @@ impl Server {
   }
 
   /// Disconect the given client, does nothing if the client is not currently connected.
-  pub async fn disconnect(&mut self, remote_addr: &SocketAddr) -> Result<(), IoError> {
+  pub fn disconnect(&mut self, remote_addr: &SocketAddr) -> Result<(), IoError> {
     if let Some(client) = self.clients.get_mut(remote_addr) {
       match client.start_shutdown() {
         Ok(true) => {
@@ -287,7 +287,13 @@ impl Server {
       self
         .outgoing_udp
         .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
-      self.send_outgoing().await?
+      let res = futures::executor::block_on(async { self.send_outgoing().await });
+      match res {
+        Ok(_) => {}
+        Err(err) => {
+          log::warn!("error sending outgoing packets: {}", err);
+        }
+      }
     }
 
     Ok(())
@@ -522,7 +528,7 @@ impl Server {
         if session.ttl.elapsed() < RTC_SESSION_TIMEOUT {
           true
         } else {
-		 println!("SESSION TIMEOUT !1?\n");
+          println!("SESSION TIMEOUT !1?\n");
           log::info!(
             "session timeout for server user '{}' and remote user '{}'",
             session_key.server_user,
