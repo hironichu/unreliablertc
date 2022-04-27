@@ -163,7 +163,6 @@ impl SessionEndpoint {
     let handler =
       futures::executor::block_on(async move { session_sender.send(incoming_session).await });
     if handler.is_err() {
-		println!("SessionEndpoint::session_request: session_sender.send() failed");
       return Err(SessionError::Disconnected);
     }
     Ok(response)
@@ -473,7 +472,6 @@ impl Server {
               "beginning client data channel connection with {}",
               remote_addr,
             );
-			println!("beginning client data channel connection with {}", remote_addr);
             vacant.insert(
               Client::new(&self.ssl_acceptor, self.buffer_pool.clone(), remote_addr)
                 .expect("could not create new client instance"),
@@ -557,7 +555,6 @@ impl Server {
   }
 
   fn accept_session(&mut self, incoming_session: IncomingSession) {
-	println!("accept_session");
     log::info!(
       "session initiated with server user: '{}' and remote user: '{}'",
       incoming_session.server_user,
