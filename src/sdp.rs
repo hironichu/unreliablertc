@@ -53,39 +53,6 @@ pub fn parse_sdp_fields(body: &str) -> Result<SdpFields, Error> {
     }),
     _ => Err("not all SDP fields provided".into()),
   }
-  //   let sdp = SessionDescription::unmarshal(&mut reader);
-  //   match sdp {
-  //     Ok(sdp) => {
-  //       let media = sdp.media_descriptions;
-  //       match media.first() {
-  // 		Some(media) => {
-  // 			let ice_ufrag = match media.attribute("ice-ufrag") {
-  // 				Some(ice_ufrag) => ice_ufrag,
-  // 				None => None,
-  // 			};
-  // 			let ice_passwd = match media.attribute("ice-pwd") {
-  // 				Some(ice_passwd) => ice_passwd,
-  // 				None => None,
-  // 			};
-  // 			let mid = match media.attribute("mid") {
-  // 				Some(mid) => mid,
-  // 				None => None,
-  // 			};
-  // 			if ice_ufrag.is_some() && ice_passwd.is_some() && mid.is_some() {
-  // 				Ok(SdpFields {
-  // 					ice_ufrag: mid.unwrap().to_string(),
-  // 					ice_passwd: ice_passwd.unwrap().to_string(),
-  // 					mid: mid.unwrap().to_string(),
-  // 				})
-  // 			} else {
-  // 				Err(format!("ice-ufrag, ice-passwd or mid not found in sdp").into())
-  // 			}
-  // 		},
-  // 		None => Err(format!("no media found in sdp").into())
-  //       }
-  //     }
-  //     Err(e) => return Err(Box::new(e)),
-  //   }
 }
 
 pub fn gen_sdp_response<R: Rng>(

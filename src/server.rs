@@ -184,6 +184,7 @@ pub struct Server {
   last_cleanup: Instant,
   periodic_timer: Interval,
 }
+// unsafe impl Send for Server {}
 
 impl Server {
   /// Start a new WebRTC data channel server listening on `listen_addr` and advertising its
@@ -195,11 +196,14 @@ impl Server {
     const SESSION_BUFFER_SIZE: usize = 8;
 
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
-    let udp_socket = Async::new(UdpSocket::bind(&listen_addr)?)?;
+	let sock = UdpSocket::bind(&listen_addr)?;
+	sock.set_nonblocking(true)?;
+	sock.set_ttl(1)?;
+    let udp_socket = Async::new(sock)?;
 
     let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
 
-    log::info!(
+    println!(
       "new WebRTC data channel server listening on {}, public addr {}",
       listen_addr,
       public_addr
@@ -210,7 +214,7 @@ impl Server {
       cert_fingerprint: Arc::new(crypto.fingerprint),
       session_sender,
     };
-
+	
     Ok(Server {
       udp_socket,
       session_endpoint,
@@ -381,7 +385,6 @@ impl Server {
 
       select! {
             incoming_session = self.incoming_session_stream.next() => {
-      println!("incoming session");
                 Next::IncomingSession(
                     incoming_session.expect("connection to SessionEndpoint has closed")
                 )
@@ -470,7 +473,7 @@ impl Server {
               "beginning client data channel connection with {}",
               remote_addr,
             );
-
+			println!("beginning client data channel connection with {}", remote_addr);
             vacant.insert(
               Client::new(&self.ssl_acceptor, self.buffer_pool.clone(), remote_addr)
                 .expect("could not create new client instance"),
@@ -554,6 +557,7 @@ impl Server {
   }
 
   fn accept_session(&mut self, incoming_session: IncomingSession) {
+	println!("accept_session");
     log::info!(
       "session initiated with server user: '{}' and remote user: '{}'",
       incoming_session.server_user,
