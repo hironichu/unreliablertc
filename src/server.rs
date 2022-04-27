@@ -196,17 +196,9 @@ impl Server {
 
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
 	let sock = UdpSocket::bind(&listen_addr)?;
-	sock.set_nonblocking(true)?;
-	sock.set_ttl(1)?;
     let udp_socket = Async::new(sock)?;
 
     let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
-
-    println!(
-      "new WebRTC data channel server listening on {}, public addr {}",
-      listen_addr,
-      public_addr
-    );
 
     let session_endpoint = SessionEndpoint {
       public_addr,
