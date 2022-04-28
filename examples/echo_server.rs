@@ -46,8 +46,8 @@ async fn main() {
 
   let sdp = matches.value_of("sdp").unwrap();
 
-  let mut rtc_server = RtcServer::new(webrtc_listen_addr, public_webrtc_addr)
-    .expect("could not start RTC server");
+  let mut rtc_server =
+    RtcServer::new(webrtc_listen_addr, public_webrtc_addr).expect("could not start RTC server");
 
   let mut session_endpoint = rtc_server.session_endpoint();
   match session_endpoint.session_request(sdp) {
@@ -67,17 +67,12 @@ async fn main() {
         message_buf.extend(received.message.as_ref());
         Some((received.message_type, received.remote_addr))
       }
-      Err(err) => {
-        log::warn!("could not receive RTC message: {:?}", err);
-        None
-      }
+      Err(_err) => None,
     };
 
     if let Some((message_type, remote_addr)) = received {
-      if let Err(err) = rtc_server
-        .send(&message_buf, message_type, &remote_addr)
-      {
-        log::warn!("could not send message to {}: {:?}", remote_addr, err);
+      if let Err(_err) = rtc_server.send(&message_buf, message_type, &remote_addr) {
+        // log::warn!("could not send message to {}: {:?}", remote_addr, err);
       }
     }
   }

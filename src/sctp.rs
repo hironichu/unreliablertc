@@ -4,12 +4,14 @@ use byteorder::{ByteOrder, LittleEndian, NetworkEndian};
 use crc::{Crc, CRC_32_ISCSI};
 
 pub const SCTP_FLAG_END_FRAGMENT: u8 = 0x01;
+pub const SCTP_FLAG_MIDDLE_FRAGMENT: u8 = 0x00;
 pub const SCTP_FLAG_BEGIN_FRAGMENT: u8 = 0x02;
 pub const SCTP_FLAG_UNRELIABLE: u8 = 0x04;
 
-
-pub const SCTP_FLAG_COMPLETE_UNRELIABLE: u8 =
-  SCTP_FLAG_BEGIN_FRAGMENT | SCTP_FLAG_END_FRAGMENT | SCTP_FLAG_UNRELIABLE;
+pub const SCTP_FLAG_COMPLETE_UNRELIABLE: u8 = SCTP_FLAG_BEGIN_FRAGMENT
+  | SCTP_FLAG_END_FRAGMENT
+  | SCTP_FLAG_UNRELIABLE
+  | SCTP_FLAG_MIDDLE_FRAGMENT;
 
 #[derive(Debug, Copy, Clone)]
 pub enum SctpChunk<'a> {

@@ -262,35 +262,29 @@ impl Server {
   }
 
   /// Disconect the given client, does nothing if the client is not currently connected.
-  pub fn disconnect(&mut self, remote_addr: &SocketAddr) -> Result<(), IoError> {
-    if let Some(client) = self.clients.get_mut(remote_addr) {
-      match client.start_shutdown() {
-        Ok(true) => {
-          log::info!("starting shutdown for client {}", remote_addr);
-        }
-        Ok(false) => {}
-        Err(err) => {
-          log::warn!(
-            "error starting shutdown for client {}: {}",
-            remote_addr,
-            err
-          );
-        }
-      }
+  pub fn disconnect(&mut self, remote_addr: &SocketAddr) -> Result<bool, String> {
+    match self.clients.get_mut(remote_addr) {
+      Some(client) => {
+        let shutdown = match client.start_shutdown() {
+          Ok(true) => Ok(true),
+          Ok(false) => Ok(false),
+          Err(err) => Err(err),
+        };
 
-      self
-        .outgoing_udp
-        .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
-      let res = futures::executor::block_on(async { self.send_outgoing().await });
-      match res {
-        Ok(_) => {}
-        Err(err) => {
-          log::warn!("error sending outgoing packets: {}", err);
+        self
+          .outgoing_udp
+          .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
+        let res = futures::executor::block_on(async { self.send_outgoing().await });
+        match res {
+          Ok(_) => match shutdown {
+            Ok(value) => Ok(value),
+            Err(err) => Err(err.to_string()),
+          },
+          Err(err) => Err(err.to_string()),
         }
       }
+      None => Err("Client not found".to_string()),
     }
-
-    Ok(())
   }
 
   /// Send the given message to the given remote client, if they are connected.
@@ -314,12 +308,7 @@ impl Server {
       Err(ClientError::IncompletePacketWrite) => {
         return Err(SendError::IncompleteMessageWrite).into();
       }
-      Err(err) => {
-        log::warn!(
-          "message send for client {} generated unexpected error, shutting down: {}",
-          remote_addr,
-          err
-        );
+      Err(_) => {
         let _ = client.start_shutdown();
         return Err(SendError::ClientNotConnected).into();
       }
@@ -329,7 +318,6 @@ impl Server {
     self
       .outgoing_udp
       .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
-    // Ok(self.send_outgoing().await?)
     let outgoing = futures::executor::block_on(async move { self.send_outgoing().await });
     match outgoing {
       Ok(_) => Ok(()),
@@ -351,7 +339,7 @@ impl Server {
       match is_err {
         Ok(()) => {}
         Err(err) => {
-          log::warn!("error processing incoming packets: {}", err);
+          return Err(err);
         }
       }
     }
@@ -469,10 +457,6 @@ impl Server {
 
         match self.clients.entry(remote_addr) {
           HashMapEntry::Vacant(vacant) => {
-            log::info!(
-              "beginning client data channel connection with {}",
-              remote_addr,
-            );
             vacant.insert(
               Client::new(&self.ssl_acceptor, self.buffer_pool.clone(), remote_addr)
                 .expect("could not create new client instance"),
@@ -483,13 +467,8 @@ impl Server {
       }
     } else {
       if let Some(client) = self.clients.get_mut(&remote_addr) {
-        if let Err(err) = client.receive_incoming_packet(packet_buffer.into_owned()) {
+        if let Err(_) = client.receive_incoming_packet(packet_buffer.into_owned()) {
           if !client.shutdown_started() {
-            log::warn!(
-              "client {} had unexpected error receiving UDP packet, shutting down: {}",
-              remote_addr,
-              err
-            );
             let _ = client.start_shutdown();
           }
         }
@@ -511,9 +490,8 @@ impl Server {
       self.last_generate_periodic = Instant::now();
 
       for (remote_addr, client) in &mut self.clients {
-        if let Err(err) = client.generate_periodic() {
+        if let Err(_) = client.generate_periodic() {
           if !client.shutdown_started() {
-            log::warn!("error for client {}, shutting down: {}", remote_addr, err);
             let _ = client.start_shutdown();
           }
         }
@@ -528,27 +506,19 @@ impl Server {
   fn timeout_clients(&mut self) {
     if self.last_cleanup.elapsed() >= CLEANUP_INTERVAL {
       self.last_cleanup = Instant::now();
-      self.sessions.retain(|session_key, session| {
+      self.sessions.retain(|_, session| {
         if session.ttl.elapsed() < RTC_SESSION_TIMEOUT {
           true
         } else {
-          log::info!(
-            "session timeout for server user '{}' and remote user '{}'",
-            session_key.server_user,
-            session_key.remote_user
-          );
           false
         }
       });
 
-      self.clients.retain(|remote_addr, client| {
+      self.clients.retain(|_, client| {
         if !client.is_shutdown() && client.last_activity().elapsed() < RTC_CONNECTION_TIMEOUT {
           true
         } else {
-          if !client.is_shutdown() {
-            log::info!("connection timeout for client {}", remote_addr);
-          }
-          log::info!("client {} removed", remote_addr);
+          if !client.is_shutdown() {}
           false
         }
       });
@@ -556,12 +526,6 @@ impl Server {
   }
 
   fn accept_session(&mut self, incoming_session: IncomingSession) {
-    log::info!(
-      "session initiated with server user: '{}' and remote user: '{}'",
-      incoming_session.server_user,
-      incoming_session.remote_user
-    );
-
     self.sessions.insert(
       SessionKey {
         server_user: incoming_session.server_user,
