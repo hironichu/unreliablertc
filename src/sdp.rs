@@ -80,7 +80,6 @@ pub fn gen_sdp_response<R: Rng>(
          a=setup:passive\\r\\n\
          a=mid:{mid}\\r\\n\
 		 a=sctpmap:{port} webrtc-datachannel 8000\\r\\n\
-		 a=max-message-size:1160\\r\\n\
          a=sctp-port:{port}\\r\\n\",\
          \"type\":\"answer\"}},\"candidate\":{{\"sdpMLineIndex\":0,\
          \"sdpMid\":\"{mid}\",\"candidate\":\"candidate:1 1 UDP {rand2} {ip} {port} \
