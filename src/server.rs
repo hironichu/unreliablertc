@@ -168,7 +168,6 @@ impl SessionEndpoint {
     Ok(response)
   }
 }
-
 pub struct Server {
   udp_socket: Async<UdpSocket>,
   session_endpoint: SessionEndpoint,
@@ -191,11 +190,11 @@ impl Server {
   ///
   /// WebRTC connections must be started via an external communication channel from a browser via
   /// the `SessionEndpoint`, after which a WebRTC data channel can be opened.
-  pub async fn new(listen_addr: SocketAddr, public_addr: SocketAddr) -> Result<Server, IoError> {
+  pub fn new(listen_addr: SocketAddr, public_addr: SocketAddr) -> Result<Server, IoError> {
     const SESSION_BUFFER_SIZE: usize = 8;
 
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
-	let sock = UdpSocket::bind(&listen_addr)?;
+    let sock = UdpSocket::bind(&listen_addr).expect("couldn't bind to address");
     let udp_socket = Async::new(sock)?;
 
     let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
@@ -205,7 +204,7 @@ impl Server {
       cert_fingerprint: Arc::new(crypto.fingerprint),
       session_sender,
     };
-	
+
     Ok(Server {
       udp_socket,
       session_endpoint,
@@ -242,14 +241,13 @@ impl Server {
   }
 
   /// List all the currently fully established client connections.
-  pub fn connected_clients(&self) -> impl Iterator<Item = &SocketAddr> + '_ {
-    self.clients.iter().filter_map(|(addr, client)| {
-      if client.is_established() {
-        Some(addr)
-      } else {
-        None
-      }
-    })
+  pub fn connected_clients(&mut self) -> Vec<&SocketAddr> {
+    self
+      .clients
+      .iter_mut()
+      .filter(|(_, c)| c.is_established())
+      .map(|(addr, _)| addr)
+      .collect()
   }
 
   /// Returns true if the client has a completely established WebRTC data channel connection and
@@ -298,7 +296,7 @@ impl Server {
   /// Send the given message to the given remote client, if they are connected.
   ///
   /// The given message must be less than `MAX_MESSAGE_LEN`.
-  pub async fn send(
+  pub fn send(
     &mut self,
     message: &[u8],
     message_type: MessageType,
@@ -331,7 +329,12 @@ impl Server {
     self
       .outgoing_udp
       .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
-    Ok(self.send_outgoing().await?)
+    // Ok(self.send_outgoing().await?)
+    let outgoing = futures::executor::block_on(async move { self.send_outgoing().await });
+    match outgoing {
+      Ok(_) => Ok(()),
+      Err(_) => Err(SendError::ClientNotConnected).into(),
+    }
   }
 
   /// Receive a WebRTC data channel message from any connected client.
@@ -342,9 +345,9 @@ impl Server {
   /// If the provided buffer is not large enough to hold the received message, the received
   /// message will be truncated, and the original length will be returned as part of
   /// `MessageResult`.
-  pub async fn recv(&mut self) -> Result<MessageResult<'_>, IoError> {
+  pub fn recv(&mut self) -> Result<MessageResult<'_>, IoError> {
     while self.incoming_rtc.is_empty() {
-      self.process().await?;
+      let _ = futures::executor::block_on(async { self.process().await });
     }
 
     let (message, remote_addr, message_type) = self.incoming_rtc.pop_front().unwrap();
@@ -375,19 +378,19 @@ impl Server {
       pin_mut!(timer_next);
 
       select! {
-            incoming_session = self.incoming_session_stream.next() => {
-                Next::IncomingSession(
-                    incoming_session.expect("connection to SessionEndpoint has closed")
-                )
-            }
-            res = recv_udp => {
-                let (len, remote_addr) = res?;
-                Next::IncomingPacket(len, remote_addr)
-            }
-            _ = timer_next => {
-                Next::PeriodicTimer
-            }
-        }
+          incoming_session = self.incoming_session_stream.next() => {
+              Next::IncomingSession(
+                  incoming_session.expect("connection to SessionEndpoint has closed")
+              )
+          }
+          res = recv_udp => {
+              let (len, remote_addr) = res?;
+              Next::IncomingPacket(len, remote_addr)
+          }
+          _ = timer_next => {
+              Next::PeriodicTimer
+          }
+      }
     };
 
     match next {
