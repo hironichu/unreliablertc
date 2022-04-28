@@ -564,8 +564,8 @@ fn receive_sctp_packet(
             chunks: &[SctpChunk::InitAck {
               initiate_tag: client_state.sctp_local_verification_tag,
               window_credit: SCTP_BUFFER_SIZE,
-              num_outbound_streams: num_outbound_streams,
-              num_inbound_streams: num_inbound_streams,
+              num_outbound_streams,
+              num_inbound_streams,
               initial_tsn: client_state.sctp_local_tsn,
               state_cookie: SCTP_COOKIE,
             }],

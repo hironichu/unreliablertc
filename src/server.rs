@@ -347,7 +347,13 @@ impl Server {
   /// `MessageResult`.
   pub fn recv(&mut self) -> Result<MessageResult<'_>, IoError> {
     while self.incoming_rtc.is_empty() {
-      let _ = futures::executor::block_on(async { self.process().await });
+      let is_err = futures::executor::block_on(async { self.process().await });
+      match is_err {
+        Ok(()) => {}
+        Err(err) => {
+          log::warn!("error processing incoming packets: {}", err);
+        }
+      }
     }
 
     let (message, remote_addr, message_type) = self.incoming_rtc.pop_front().unwrap();
