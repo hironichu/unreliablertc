@@ -22,7 +22,6 @@ use crate::buffer_pool::{BufferPool, OwnedBuffer};
 use crate::sctp::{
   read_sctp_packet, write_sctp_packet, SctpChunk, SctpPacket, SctpWriteError,
   SCTP_FLAG_BEGIN_FRAGMENT, SCTP_FLAG_COMPLETE_UNRELIABLE, SCTP_FLAG_END_FRAGMENT,
-  SCTP_FLAG_MIDDLE_FRAGMENT,
 };
 
 /// Heartbeat packets will be generated at a maximum of this rate (if the connection is otherwise
@@ -48,8 +47,7 @@ pub const SCTP_MESSAGE_OVERHEAD: usize = 28;
 /// As such, this maximum size is almost certainly too large for browsers to actually support.
 /// Start with a much lower MTU (around 1200) and test it.
 pub const MAX_MESSAGE_LEN: usize = MAX_SCTP_PACKET_SIZE - SCTP_MESSAGE_OVERHEAD;
-pub const DATA_CHANNEL_OPEN_FAILED: u16 = 5000;
-pub const DATA_CHANNEL_ERROR_NEGOTIATION_FAILED: u8 = 0;
+
 #[derive(Debug)]
 pub enum ClientError {
   TlsError(SslError),
@@ -89,7 +87,7 @@ pub enum MessageType {
 
 pub struct Client {
   buffer_pool: BufferPool,
-  _remote_addr: SocketAddr,
+  remote_addr: SocketAddr,
   ssl_state: ClientSslState,
   client_state: ClientState,
 }
@@ -112,7 +110,7 @@ impl Client {
       }
       Err(HandshakeError::WouldBlock(mid_handshake)) => Ok(Client {
         buffer_pool,
-        _remote_addr: remote_addr,
+        remote_addr,
         ssl_state: ClientSslState::Handshake(mid_handshake),
         client_state: ClientState {
           last_activity: Instant::now(),
@@ -234,12 +232,22 @@ impl Client {
       ClientSslState::Handshake(mut mid_handshake) => {
         mid_handshake.get_mut().incoming_udp.push_back(udp_packet);
         match mid_handshake.handshake() {
-          Ok(ssl_stream) => ClientSslState::Established(ssl_stream),
+          Ok(ssl_stream) => {
+            // log::info!("DTLS handshake finished for remote {}", self.remote_addr);
+            ClientSslState::Established(ssl_stream)
+          }
           Err(handshake_error) => match handshake_error {
             HandshakeError::SetupFailure(err) => {
               return Err(ClientError::OpenSslError(err));
             }
-            HandshakeError::Failure(mid_handshake) => ClientSslState::Handshake(mid_handshake),
+            HandshakeError::Failure(mid_handshake) => {
+            //   log::warn!(
+            //     "SSL handshake failure with remote {}: {}",
+            //     self.remote_addr,
+            //     mid_handshake.error()
+            //   );
+              ClientSslState::Handshake(mid_handshake)
+            }
             HandshakeError::WouldBlock(mid_handshake) => ClientSslState::Handshake(mid_handshake),
           },
         }
@@ -284,9 +292,8 @@ impl Client {
                 self.start_shutdown()?;
               }
             }
-            Err(_) => {
-              drop(ssl_buffer);
-              self.start_shutdown()?;
+            Err(_err) => {
+            //   log::debug!("sctp read error on packet received over DTLS: {}", err);
             }
           }
         }
@@ -294,6 +301,7 @@ impl Client {
           if err.code() == ErrorCode::WANT_READ {
             break;
           } else if err.code() == ErrorCode::ZERO_RETURN {
+            // log::info!("DTLS received close notify");
             drop(ssl_buffer);
             self.start_shutdown()?;
           } else {
@@ -530,6 +538,7 @@ fn receive_sctp_packet(
         support_unreliable,
       } => {
         if !support_unreliable {
+        //   log::warn!("peer does not support selective unreliability, abort connection");
           client_state.sctp_state = SctpState::Shutdown;
           return Ok(false);
         }
@@ -595,11 +604,9 @@ fn receive_sctp_packet(
         proto_id,
         user_data,
       } => {
-        if chunk_flags & SCTP_FLAG_BEGIN_FRAGMENT == 0
-          || chunk_flags & SCTP_FLAG_END_FRAGMENT == 0
-          || SCTP_FLAG_MIDDLE_FRAGMENT == 0
+        if chunk_flags & SCTP_FLAG_BEGIN_FRAGMENT == 0 || chunk_flags & SCTP_FLAG_END_FRAGMENT == 0
         {
-          //TODO: handle fragmented packets
+        //   log::debug!("received fragmented SCTP packet, dropping");
         } else {
           client_state.sctp_remote_tsn = max_tsn(client_state.sctp_remote_tsn, tsn);
 
@@ -724,14 +731,13 @@ fn receive_sctp_packet(
         first_param_type,
         first_param_data,
       } => {
-        if first_param_type == DATA_CHANNEL_OPEN_FAILED {
-          if first_param_data[0] == DATA_CHANNEL_ERROR_NEGOTIATION_FAILED {
-            client_state.sctp_state = SctpState::Shutdown;
-            return Ok(false);
-          }
-        }
+        // log::warn!(
+        //   "SCTP error chunk received: {} {:?}",
+        //   first_param_type,
+        //   first_param_data
+        // );
       }
-      _chunk => {}
+      chunk => {},
     }
   }
 
