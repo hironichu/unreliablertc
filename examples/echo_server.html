@@ -8,14 +8,10 @@
 	<input type="button" value="Start SDP" id="setready" >
 	<p id="offer"></p>
     <script type="module">
-        let NUM_PACKETS = 20;
+        let NUM_PACKETS = 100000;
         let SEND_INTERVAL = 500;
 		var sdp = "";
-        let peer = new RTCPeerConnection({
-            iceServers: [{
-                urls: ["stun:stun.l.google.com:19302"]
-            }]
-        });
+        let peer = new RTCPeerConnection();
 
         let channel = peer.createDataChannel("data", {
             ordered: false,
@@ -24,7 +20,7 @@
         channel.binaryType = "arraybuffer";
 
         channel.onerror = function(evt) {
-            console.log("data channel error:", evt.message);
+            console.log("data channel error:", evt);
         };
 
         let send_times = {};
@@ -33,30 +29,27 @@
 
             let packet_number = 0
             let cancel = setInterval(function() {
-                if (packet_number == NUM_PACKETS) {
+                if (packet_number == NUM_PACKETS || channel.readyState == "closed") {
                     clearInterval(cancel);
-                    console.log("closing connection");
-                    peer.close();
                 } else {
-                    packet_number++
-                    console.log("sending packet", packet_number);
-                    let array = new Uint8Array(1000);
-                    array[0] = packet_number;
+					console.log("sending packet", packet_number);
+                    let array = new TextEncoder().encode('PACKET SEND FROM BROWSER '+packet_number);
+					// const buffer = crypto.getRandomValues(new Uint8Array(1160));
                     channel.send(array);
                     send_times[packet_number] = Date.now();
+                    packet_number++
                 }
-            }, SEND_INTERVAL);
+            }, 50);
 
             channel.onmessage = function(evt) {
                 let array = new Uint8Array(evt.data);
-                let num = Number(array[0]);
-                console.log(
-                    "received packet " + num,
-                    "of length " + evt.data.byteLength,
-                    "in " + (Date.now() - send_times[num]) + " ms"
-                );
+				// let text = new TextDecoder().decode(array);
+				console.log(`Got this from server`, array.byteLength);
             };
         };
+		channel.onclose = function() {
+			console.log("data channel closed");
+		};
 
         peer.onicecandidate = function(evt) {
             if (evt.candidate) {
@@ -86,7 +79,9 @@
 			send.value = "Send";
 			send.onclick = function() {
 				sdp = JSON.parse(document.getElementById("sdp").value);
-				peer.setRemoteDescription(new RTCSessionDescription(sdp.answer)).then(function() {
+				peer.setRemoteDescription(new RTCSessionDescription(sdp.answer)).then(async function() {
+					// const answer = await(await peer.createAnswer());
+					// console.log(answer)
 					var candidate = new RTCIceCandidate(sdp.candidate);
 					peer.addIceCandidate(candidate).then(function() {
 						console.log("add ice candidate success");
@@ -98,7 +93,7 @@
 				});
 			};
 			document.body.appendChild(send);
-		}) 
+		})
 
 		
     </script>

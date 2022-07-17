@@ -71,7 +71,7 @@ async fn main() {
     };
 
     if let Some((message_type, remote_addr)) = received {
-      if let Err(_err) = rtc_server.send(&message_buf, message_type, &remote_addr) {
+      if let Err(_err) = rtc_server.send(&message_buf, message_type, &remote_addr).await {
         // log::warn!("could not send message to {}: {:?}", remote_addr, err);
       }
     }

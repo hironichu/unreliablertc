@@ -48,6 +48,8 @@ pub const SCTP_MESSAGE_OVERHEAD: usize = 28;
 /// Start with a much lower MTU (around 1200) and test it.
 pub const MAX_MESSAGE_LEN: usize = MAX_SCTP_PACKET_SIZE - SCTP_MESSAGE_OVERHEAD;
 
+pub const DATA_CHANNEL_OPEN_FAILED: u16 = 5000;
+pub const DATA_CHANNEL_ERROR_NEGOTIATION_FAILED: u8 = 2;
 #[derive(Debug)]
 pub enum ClientError {
   TlsError(SslError),
@@ -87,7 +89,7 @@ pub enum MessageType {
 
 pub struct Client {
   buffer_pool: BufferPool,
-  remote_addr: SocketAddr,
+  _remote_addr: SocketAddr,
   ssl_state: ClientSslState,
   client_state: ClientState,
 }
@@ -110,7 +112,7 @@ impl Client {
       }
       Err(HandshakeError::WouldBlock(mid_handshake)) => Ok(Client {
         buffer_pool,
-        remote_addr,
+        _remote_addr: remote_addr,
         ssl_state: ClientSslState::Handshake(mid_handshake),
         client_state: ClientState {
           last_activity: Instant::now(),
@@ -241,11 +243,11 @@ impl Client {
               return Err(ClientError::OpenSslError(err));
             }
             HandshakeError::Failure(mid_handshake) => {
-            //   log::warn!(
-            //     "SSL handshake failure with remote {}: {}",
-            //     self.remote_addr,
-            //     mid_handshake.error()
-            //   );
+              //   log::warn!(
+              //     "SSL handshake failure with remote {}: {}",
+              //     self.remote_addr,
+              //     mid_handshake.error()
+              //   );
               ClientSslState::Handshake(mid_handshake)
             }
             HandshakeError::WouldBlock(mid_handshake) => ClientSslState::Handshake(mid_handshake),
@@ -293,7 +295,7 @@ impl Client {
               }
             }
             Err(_err) => {
-            //   log::debug!("sctp read error on packet received over DTLS: {}", err);
+              //   log::debug!("sctp read error on packet received over DTLS: {}", err);
             }
           }
         }
@@ -538,7 +540,7 @@ fn receive_sctp_packet(
         support_unreliable,
       } => {
         if !support_unreliable {
-        //   log::warn!("peer does not support selective unreliability, abort connection");
+          //   log::warn!("peer does not support selective unreliability, abort connection");
           client_state.sctp_state = SctpState::Shutdown;
           return Ok(false);
         }
@@ -606,7 +608,7 @@ fn receive_sctp_packet(
       } => {
         if chunk_flags & SCTP_FLAG_BEGIN_FRAGMENT == 0 || chunk_flags & SCTP_FLAG_END_FRAGMENT == 0
         {
-        //   log::debug!("received fragmented SCTP packet, dropping");
+          //   log::debug!("received fragmented SCTP packet, dropping");
         } else {
           client_state.sctp_remote_tsn = max_tsn(client_state.sctp_remote_tsn, tsn);
 
@@ -731,13 +733,16 @@ fn receive_sctp_packet(
         first_param_type,
         first_param_data,
       } => {
-        // log::warn!(
-        //   "SCTP error chunk received: {} {:?}",
-        //   first_param_type,
-        //   first_param_data
-        // );
+        if first_param_type == DATA_CHANNEL_OPEN_FAILED {
+          if first_param_data[0] == DATA_CHANNEL_ERROR_NEGOTIATION_FAILED {
+            client_state.sctp_state = SctpState::Shutdown;
+            return Ok(false);
+          }
+        }
       }
-      chunk => {},
+      _chunk => {
+        //
+      }
     }
   }
 

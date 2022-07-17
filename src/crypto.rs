@@ -29,7 +29,7 @@ impl Crypto {
     let key = PKey::from_rsa(rsa)?;
 
     let mut name_builder = X509NameBuilder::new()?;
-    name_builder.append_entry_by_nid(Nid::COMMONNAME, "webrtc-unreliable")?;
+    name_builder.append_entry_by_nid(Nid::COMMONNAME, "ftl-server")?;
     let name = name_builder.build();
 
     let mut x509_builder = X509::builder()?;
