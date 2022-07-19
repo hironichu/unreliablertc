@@ -47,7 +47,7 @@ async fn main() {
   let sdp = matches.value_of("sdp").unwrap();
 
   let mut rtc_server =
-    RtcServer::new(webrtc_listen_addr, public_webrtc_addr).expect("could not start RTC server");
+    RtcServer::new(webrtc_listen_addr, public_webrtc_addr, None).expect("could not start RTC server");
 
   let mut session_endpoint = rtc_server.session_endpoint();
   match session_endpoint.session_request(sdp) {

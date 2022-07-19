@@ -2,6 +2,7 @@ use std::{
   collections::{hash_map::Entry as HashMapEntry, HashMap, VecDeque},
   convert::AsRef,
   error::Error,
+  ffi::CString,
   fmt,
   io::{Error as IoError, ErrorKind as IoErrorKind},
   net::{SocketAddr, UdpSocket},
@@ -100,6 +101,23 @@ impl<'a> AsRef<[u8]> for MessageBuffer<'a> {
   }
 }
 
+///
+/// Struct representing a ErrorMessage
+///
+#[repr(C)]
+pub struct ErrorMessage {
+  pub code: i32,
+  pub message: CString,
+}
+///
+/// Struct representing a SenderMessage
+///
+#[repr(C)]
+pub struct SenderMessage {
+  pub status: i32,
+  pub message: Option<CString>,
+}
+
 pub struct MessageResult<'a> {
   pub message: MessageBuffer<'a>,
   pub message_type: MessageType,
@@ -177,6 +195,7 @@ pub struct Server {
   last_generate_periodic: Instant,
   last_cleanup: Instant,
   periodic_timer: Interval,
+  pub cb: Option<extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>)>,
 }
 // unsafe impl Send for Server {}
 
@@ -186,7 +205,11 @@ impl Server {
   ///
   /// WebRTC connections must be started via an external communication channel from a browser via
   /// the `SessionEndpoint`, after which a WebRTC data channel can be opened.
-  pub fn new(listen_addr: SocketAddr, public_addr: SocketAddr) -> Result<Server, IoError> {
+  pub fn new(
+    listen_addr: SocketAddr,
+    public_addr: SocketAddr,
+    cb: Option<extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>)>,
+  ) -> Result<Server, IoError> {
     const SESSION_BUFFER_SIZE: usize = 8;
 
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
@@ -223,6 +246,7 @@ impl Server {
       last_generate_periodic: Instant::now(),
       last_cleanup: Instant::now(),
       periodic_timer: Interval::new(PERIODIC_TIMER_INTERVAL),
+      cb,
     })
   }
 
@@ -325,11 +349,7 @@ impl Server {
     self
       .outgoing_udp
       .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
-    // Ok(self.send_outgoing().await?)
-    // let outgoing = futures::executor::block_on(async move { self.send_outgoing().await });
-    // Replace the Block_on with async
-    let outgoing = self.send_outgoing().await;
-    match outgoing {
+    match self.send_outgoing().await {
       Ok(_) => Ok(()),
       Err(_) => Err(SendError::ClientNotConnected).into(),
     }
@@ -460,10 +480,15 @@ impl Server {
 
         match self.clients.entry(remote_addr) {
           HashMapEntry::Vacant(vacant) => {
-            // log::info!(
-            //   "beginning client data channel connection with {}",
-            //   remote_addr,
-            // );
+            if self.cb.is_some() {
+              self.cb.as_mut().unwrap()(
+                Box::new(Ok(SenderMessage {
+                  status: 1,
+                  message: Some(CString::new(remote_addr.ip().to_string()).unwrap()),
+                })),
+                Box::new(Some(CString::new("new_client").unwrap())),
+              );
+            }
             vacant.insert(
               Client::new(&self.ssl_acceptor, self.buffer_pool.clone(), remote_addr)
                 .expect("could not create new client instance"),
@@ -476,11 +501,6 @@ impl Server {
       if let Some(client) = self.clients.get_mut(&remote_addr) {
         if let Err(_err) = client.receive_incoming_packet(packet_buffer.into_owned()) {
           if !client.shutdown_started() {
-            // log::warn!(
-            //   "client {} had unexpected error receiving UDP packet, shutting down: {}",
-            //   remote_addr,
-            //   err
-            // );
             let _ = client.start_shutdown();
           }
         }
@@ -552,8 +572,23 @@ impl Server {
       },
     );
   }
-  pub fn get_client(&self, remote_addr: SocketAddr) -> Option<&Client> {
-    self.clients.get(&remote_addr)
+  pub fn shutdown_started(&self, remote_addr: &SocketAddr) -> Option<bool> {
+    if let Some(client) = self.clients.get(remote_addr) {
+      Some(client.shutdown_started())
+    } else {
+      None
+    }
+  }
+  pub fn client_activity(&mut self, addr: &SocketAddr) -> Option<(u128, u128, u128)> {
+    if let Some(client) = self.clients.get_mut(addr) {
+      Some((
+        client.client_state.last_activity.elapsed().as_millis(),
+        client.client_state.last_sent.elapsed().as_millis(),
+        client.client_state.last_received.elapsed().as_millis(),
+      ))
+    } else {
+      None
+    }
   }
 }
 

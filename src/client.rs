@@ -91,9 +91,9 @@ pub enum MessageType {
 
 pub struct Client {
   buffer_pool: BufferPool,
-  _remote_addr: SocketAddr,
+  pub _remote_addr: SocketAddr,
   ssl_state: ClientSslState,
-  client_state: ClientState,
+  pub client_state: ClientState,
 }
 
 impl Client {
@@ -119,6 +119,7 @@ impl Client {
         client_state: ClientState {
           last_activity: Instant::now(),
           last_sent: Instant::now(),
+          last_received: Instant::now(),
           received_messages: Vec::new(),
           sctp_state: SctpState::Shutdown,
           sctp_local_port: 0,
@@ -371,9 +372,9 @@ impl Client {
 }
 
 pub struct ClientState {
-  last_activity: Instant,
-  last_sent: Instant,
-
+  pub last_activity: Instant,
+  pub last_sent: Instant,
+  pub last_received: Instant,
   received_messages: Vec<(MessageType, OwnedBuffer)>,
 
   sctp_state: SctpState,
@@ -631,12 +632,14 @@ fn receive_sctp_packet(
             client_state
               .received_messages
               .push((MessageType::Text, msg_buffer.into_owned()));
+            client_state.last_received = Instant::now();
           } else if proto_id == DATA_CHANNEL_PROTO_BINARY {
             let mut msg_buffer = buffer_pool.acquire();
             msg_buffer.extend(user_data);
             client_state
               .received_messages
               .push((MessageType::Binary, msg_buffer.into_owned()));
+            client_state.last_received = Instant::now();
           }
 
           send_sctp_packet(
