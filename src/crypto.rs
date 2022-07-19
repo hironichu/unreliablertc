@@ -69,6 +69,11 @@ impl Crypto {
 
     ssl_acceptor_builder.set_private_key(&key)?;
     ssl_acceptor_builder.set_certificate(&x509)?;
+    ssl_acceptor_builder
+      .set_tlsext_use_srtp(
+        "SRTP_AES128_CM_SHA1_80:SRTP_AES128_CM_SHA1_32:SRTP_AEAD_AES_128_GCM:SRTP_AEAD_AES_256_GCM",
+      )
+      .unwrap();
     let ssl_acceptor = ssl_acceptor_builder.build();
 
     Ok(Crypto {

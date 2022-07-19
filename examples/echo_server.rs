@@ -61,7 +61,7 @@ async fn main() {
 
   let mut message_buf = Vec::new();
   loop {
-    let received = match rtc_server.recv() {
+    let received = match rtc_server.recv().await {
       Ok(received) => {
         message_buf.clear();
         message_buf.extend(received.message.as_ref());
@@ -71,7 +71,10 @@ async fn main() {
     };
 
     if let Some((message_type, remote_addr)) = received {
-      if let Err(_err) = rtc_server.send(&message_buf, message_type, &remote_addr).await {
+      if let Err(_err) = rtc_server
+        .send(&message_buf, message_type, &remote_addr)
+        .await
+      {
         // log::warn!("could not send message to {}: {:?}", remote_addr, err);
       }
     }

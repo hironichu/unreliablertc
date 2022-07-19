@@ -30,6 +30,7 @@ use crate::{
 pub enum SendError {
   ClientNotConnected,
   IncompleteMessageWrite,
+  ClientError(String),
   Io(IoError),
 }
 
@@ -41,6 +42,7 @@ impl fmt::Display for SendError {
         write!(f, "incomplete write of WebRTC Data Channel message")
       }
       SendError::Io(err) => fmt::Display::fmt(err, f),
+      SendError::ClientError(msg) => fmt::Display::fmt(msg, f),
     }
   }
 }
@@ -189,7 +191,16 @@ impl Server {
 
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
     let sock = UdpSocket::bind(&listen_addr).expect("couldn't bind to address");
-    sock.set_ttl(128).expect("couldn't set ttl");
+    sock.set_ttl(1).expect("couldn't set ttl");
+    sock
+      .set_multicast_loop_v4(true)
+      .expect("couldn't set multicast V4");
+    sock
+      .set_multicast_loop_v6(true)
+      .expect("couldn't set multicast V6");
+    sock
+      .set_nonblocking(true)
+      .expect("couldn't set nonblocking");
     let udp_socket = Async::new(sock)?;
     let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
 
@@ -302,17 +313,13 @@ impl Server {
         return Err(SendError::IncompleteMessageWrite).into();
       }
       Err(err) => {
-        // log::warn!(
-        //   "message send for client {} generated unexpected error, shutting down: {}",
-        //   remote_addr,
-        //   err
-        // );
-        println!(
-          "message send for client {} generated unexpected error, shutting down: {}",
-          remote_addr, err
-        );
-        let _ = client.start_shutdown();
-        return Err(SendError::ClientNotConnected).into();
+        let shutdown = client.start_shutdown();
+        let catcher = match shutdown {
+          Ok(true) => Err(SendError::ClientError(err.to_string())),
+          Ok(false) => Err(SendError::ClientNotConnected),
+          Err(cerror) => Err(SendError::ClientError(cerror.to_string())),
+        };
+        return catcher.into();
       }
       Ok(()) => {}
     }
@@ -339,78 +346,78 @@ impl Server {
   /// message will be truncated, and the original length will be returned as part of
   /// `MessageResult`.
   pub async fn recv(&mut self) -> Result<MessageResult<'_>, IoError> {
-	while self.incoming_rtc.is_empty() {
-		self.process().await?;
-	}
+    while self.incoming_rtc.is_empty() {
+      self.process().await?;
+    }
 
-	let (message, remote_addr, message_type) = self.incoming_rtc.pop_front().unwrap();
-	let message = MessageBuffer(self.buffer_pool.adopt(message));
-	return Ok(MessageResult {
-		message,
-		message_type,
-		remote_addr,
-	});
+    let (message, remote_addr, message_type) = self.incoming_rtc.pop_front().unwrap();
+    let message = MessageBuffer(self.buffer_pool.adopt(message));
+    return Ok(MessageResult {
+      message,
+      message_type,
+      remote_addr,
+    });
   }
   // Accepts new incoming WebRTC sessions, times out existing WebRTC sessions, sends outgoing UDP
   // packets, receives incoming UDP packets, and responds to STUN packets.
   async fn process(&mut self) -> Result<(), IoError> {
-	enum Next {
-		IncomingSession(IncomingSession),
-		IncomingPacket(usize, SocketAddr),
-		PeriodicTimer,
-	}
+    enum Next {
+      IncomingSession(IncomingSession),
+      IncomingPacket(usize, SocketAddr),
+      PeriodicTimer,
+    }
 
-	let mut packet_buffer = self.buffer_pool.acquire();
-	packet_buffer.resize(MAX_UDP_PAYLOAD_SIZE, 0);
-	let next = {
-		let recv_udp = self.udp_socket.recv_from(&mut packet_buffer).fuse();
-		pin_mut!(recv_udp);
+    let mut packet_buffer = self.buffer_pool.acquire();
+    packet_buffer.resize(MAX_UDP_PAYLOAD_SIZE, 0);
+    let next = {
+      let recv_udp = self.udp_socket.recv_from(&mut packet_buffer).fuse();
+      pin_mut!(recv_udp);
 
-		let timer_next = self.periodic_timer.next().fuse();
-		pin_mut!(timer_next);
+      let timer_next = self.periodic_timer.next().fuse();
+      pin_mut!(timer_next);
 
-		select! {
-			incoming_session = self.incoming_session_stream.next() => {
-				Next::IncomingSession(
-					incoming_session.expect("connection to SessionEndpoint has closed")
-				)
-			}
-			res = recv_udp => {
-				let (len, remote_addr) = res?;
-				Next::IncomingPacket(len, remote_addr)
-			}
-			_ = timer_next => {
-				Next::PeriodicTimer
-			}
-		}
-	};
+      select! {
+        incoming_session = self.incoming_session_stream.next() => {
+          Next::IncomingSession(
+            incoming_session.expect("connection to SessionEndpoint has closed")
+          )
+        }
+        res = recv_udp => {
+          let (len, remote_addr) = res?;
+          Next::IncomingPacket(len, remote_addr)
+        }
+        _ = timer_next => {
+          Next::PeriodicTimer
+        }
+      }
+    };
 
-	match next {
-		Next::IncomingSession(incoming_session) => {
-			drop(packet_buffer);
-			self.accept_session(incoming_session)
-		}
-		Next::IncomingPacket(len, remote_addr) => {
-			if len > MAX_UDP_PAYLOAD_SIZE {
-				return Err(IoError::new(
-					IoErrorKind::Other,
-					"failed to read entire datagram from socket",
-				));
-			}
-			packet_buffer.truncate(len);
-			let packet_buffer = packet_buffer.into_owned();
-			self.receive_packet(remote_addr, packet_buffer);
-			self.send_outgoing().await?;
-		}
-		Next::PeriodicTimer => {
-			drop(packet_buffer);
-			self.timeout_clients();
-			self.generate_periodic_packets();
-			self.send_outgoing().await?;
-		}
-	}
+    match next {
+      Next::IncomingSession(incoming_session) => {
+        drop(packet_buffer);
+        self.accept_session(incoming_session)
+      }
+      Next::IncomingPacket(len, remote_addr) => {
+        if len > MAX_UDP_PAYLOAD_SIZE {
+          return Err(IoError::new(
+            IoErrorKind::Other,
+            "failed to read entire datagram from socket",
+          ));
+        }
+        packet_buffer.truncate(len);
+        let packet_buffer = packet_buffer.into_owned();
+        self.receive_packet(remote_addr, packet_buffer);
+        self.send_outgoing().await?;
+      }
+      Next::PeriodicTimer => {
+        drop(packet_buffer);
+        self.timeout_clients();
+        self.generate_periodic_packets();
+        self.send_outgoing().await?;
+      }
+    }
 
-	Ok(())
+    Ok(())
   }
 
   // Send all pending outgoing UDP packets
@@ -549,11 +556,11 @@ impl Server {
   }
 }
 
-const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(60);
+const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_millis(800);
 const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
-const CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
-const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_secs(1);
-const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_secs(1);
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
+const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_millis(100);
+const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 struct SessionKey {

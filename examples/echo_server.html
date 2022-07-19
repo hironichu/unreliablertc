@@ -8,8 +8,8 @@
 	<input type="button" value="Start SDP" id="setready" >
 	<p id="offer"></p>
     <script type="module">
-        let NUM_PACKETS = 100000;
-        let SEND_INTERVAL = 500;
+        let NUM_PACKETS = 5000;
+        let SEND_INTERVAL = 0;
 		var sdp = "";
         let peer = new RTCPeerConnection();
 
@@ -23,32 +23,31 @@
             console.log("data channel error:", evt);
         };
 
-        let send_times = {};
+        // let send_times = {};
+		const enc = new TextEncoder();
+		const dec = new TextDecoder();
         channel.onopen = function() {
-            console.log("data channel open");
-
-            let packet_number = 0
             let cancel = setInterval(function() {
-                if (packet_number == NUM_PACKETS || channel.readyState == "closed") {
+                if (channel.readyState === "closed") {
                     clearInterval(cancel);
+					channel.close();
                 } else {
-					console.log("sending packet", packet_number);
-                    let array = new TextEncoder().encode('PACKET SEND FROM BROWSER '+packet_number);
-					// const buffer = crypto.getRandomValues(new Uint8Array(1160));
-                    channel.send(array);
-                    send_times[packet_number] = Date.now();
-                    packet_number++
+                    channel.send(enc.encode(performance.now().toString()));
                 }
-            }, 50);
-
+            }, SEND_INTERVAL);
             channel.onmessage = function(evt) {
-                let array = new Uint8Array(evt.data);
-				// let text = new TextDecoder().decode(array);
-				console.log(`Got this from server`, array.byteLength);
+				if (channel.readyState !== "closed") {
+					channel.send(enc.encode(evt.data.toString()));
+				}
             };
         };
 		channel.onclose = function() {
 			console.log("data channel closed");
+			performance.mark("end");
+			performance.measure("measure", "start", "end");
+			let measure = performance.getEntriesByName("measure")[0];
+			console.log(`${measure.duration / 1000}s`);
+
 		};
 
         peer.onicecandidate = function(evt) {

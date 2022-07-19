@@ -75,11 +75,14 @@ pub fn gen_sdp_response<R: Rng>(
          a=ice-ufrag:{ufrag}\\r\\n\
          a=ice-pwd:{pass}\\r\\n\
          m=application {port} UDP/DTLS/SCTP webrtc-datachannel\\r\\n\
+         a=max-message-size:1160\\r\\n\
          a=fingerprint:sha-256 {fingerprint}\\r\\n\
          a=ice-options:trickle\\r\\n\
          a=setup:passive\\r\\n\
          a=mid:{mid}\\r\\n\
-		 a=sctpmap:{port} webrtc-datachannel 8000\\r\\n\
+		     a=sctpmap:{port} webrtc-datachannel 8000\\r\\n\
+         a=max-message-size:1160\\r\\n\
+         a=sendrecv\\r\\n\
          a=sctp-port:{port}\\r\\n\",\
          \"type\":\"answer\"}},\"candidate\":{{\"sdpMLineIndex\":0,\
          \"sdpMid\":\"{mid}\",\"candidate\":\"candidate:1 1 UDP {rand2} {ip} {port} \

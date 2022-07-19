@@ -58,6 +58,7 @@ pub enum ClientError {
   NotEstablished,
   IncompletePacketRead,
   IncompletePacketWrite,
+  SCTPError(String),
 }
 
 impl fmt::Display for ClientError {
@@ -75,6 +76,7 @@ impl fmt::Display for ClientError {
       ClientError::IncompletePacketWrite => {
         write!(f, "WebRTC connection packet not completely written")
       }
+      ClientError::SCTPError(err) => write!(f, "SCTP error: {}", err),
     }
   }
 }
@@ -234,22 +236,12 @@ impl Client {
       ClientSslState::Handshake(mut mid_handshake) => {
         mid_handshake.get_mut().incoming_udp.push_back(udp_packet);
         match mid_handshake.handshake() {
-          Ok(ssl_stream) => {
-            // log::info!("DTLS handshake finished for remote {}", self.remote_addr);
-            ClientSslState::Established(ssl_stream)
-          }
+          Ok(ssl_stream) => ClientSslState::Established(ssl_stream),
           Err(handshake_error) => match handshake_error {
             HandshakeError::SetupFailure(err) => {
               return Err(ClientError::OpenSslError(err));
             }
-            HandshakeError::Failure(mid_handshake) => {
-              //   log::warn!(
-              //     "SSL handshake failure with remote {}: {}",
-              //     self.remote_addr,
-              //     mid_handshake.error()
-              //   );
-              ClientSslState::Handshake(mid_handshake)
-            }
+            HandshakeError::Failure(mid_handshake) => ClientSslState::Handshake(mid_handshake),
             HandshakeError::WouldBlock(mid_handshake) => ClientSslState::Handshake(mid_handshake),
           },
         }
@@ -294,16 +286,13 @@ impl Client {
                 self.start_shutdown()?;
               }
             }
-            Err(_err) => {
-              //   log::debug!("sctp read error on packet received over DTLS: {}", err);
-            }
+            Err(_err) => {}
           }
         }
         Err(err) => {
           if err.code() == ErrorCode::WANT_READ {
             break;
           } else if err.code() == ErrorCode::ZERO_RETURN {
-            // log::info!("DTLS received close notify");
             drop(ssl_buffer);
             self.start_shutdown()?;
           } else {
@@ -510,7 +499,9 @@ fn send_sctp_packet(
     Err(SctpWriteError::BufferSize) => {
       return Err(ClientError::IncompletePacketWrite);
     }
-    Err(err) => panic!("error writing SCTP packet: {}", err),
+    Err(err) => {
+      return Err(ClientError::SCTPError(err.to_string()));
+    }
   };
 
   assert_eq!(
@@ -608,7 +599,6 @@ fn receive_sctp_packet(
       } => {
         if chunk_flags & SCTP_FLAG_BEGIN_FRAGMENT == 0 || chunk_flags & SCTP_FLAG_END_FRAGMENT == 0
         {
-          //   log::debug!("received fragmented SCTP packet, dropping");
         } else {
           client_state.sctp_remote_tsn = max_tsn(client_state.sctp_remote_tsn, tsn);
 
