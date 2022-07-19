@@ -214,16 +214,7 @@ impl Server {
 
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
     let sock = UdpSocket::bind(&listen_addr).expect("couldn't bind to address");
-    sock.set_ttl(1).expect("couldn't set ttl");
-    sock
-      .set_multicast_loop_v4(true)
-      .expect("couldn't set multicast V4");
-    sock
-      .set_multicast_loop_v6(true)
-      .expect("couldn't set multicast V6");
-    sock
-      .set_nonblocking(true)
-      .expect("couldn't set nonblocking");
+    sock.set_ttl(120).expect("couldn't set ttl");
     let udp_socket = Async::new(sock)?;
     let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
 
@@ -249,7 +240,6 @@ impl Server {
       cb,
     })
   }
-
   /// Returns a `SessionEndpoint` which can be used to start new WebRTC sessions.
   ///
   /// WebRTC connections must be started via an external communication channel from a browser via
