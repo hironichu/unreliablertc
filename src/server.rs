@@ -282,9 +282,7 @@ impl Server {
         .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
       match self.send_outgoing().await {
         Ok(_) => {}
-        Err(_) => {
-          //   log::warn!("error sending outgoing packets: {}", err);
-        }
+        Err(_) => {}
       }
     }
 
@@ -553,6 +551,9 @@ impl Server {
         ttl: Instant::now(),
       },
     );
+  }
+  pub fn get_client(&self, remote_addr: SocketAddr) -> Option<&Client> {
+    self.clients.get(&remote_addr)
   }
 }
 
