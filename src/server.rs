@@ -115,7 +115,7 @@ pub struct ErrorMessage {
 #[repr(C)]
 pub struct SenderMessage {
   pub status: i32,
-  pub message: Option<CString>,
+  pub message: Box<Option<CString>>,
 }
 
 pub struct MessageResult<'a> {
@@ -195,7 +195,6 @@ pub struct Server {
   last_generate_periodic: Instant,
   last_cleanup: Instant,
   periodic_timer: Interval,
-  pub cb: Option<extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>)>,
 }
 // unsafe impl Send for Server {}
 
@@ -211,7 +210,11 @@ impl Server {
     cb: Option<extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>)>,
   ) -> Result<Server, IoError> {
     const SESSION_BUFFER_SIZE: usize = 8;
-
+    if cb.is_some() {
+      unsafe {
+        EVENT_CB = cb;
+      }
+    }
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
     let sock = UdpSocket::bind(&listen_addr).expect("couldn't bind to address");
     sock.set_ttl(120).expect("couldn't set ttl");
@@ -237,7 +240,6 @@ impl Server {
       last_generate_periodic: Instant::now(),
       last_cleanup: Instant::now(),
       periodic_timer: Interval::new(PERIODIC_TIMER_INTERVAL),
-      cb,
     })
   }
   /// Returns a `SessionEndpoint` which can be used to start new WebRTC sessions.
@@ -460,29 +462,49 @@ impl Server {
           remote_addr,
           session.server_passwd.as_bytes(),
           &mut packet_buffer,
-        )
-        .expect("could not write stun response");
-
-        packet_buffer.truncate(resp_len);
+        );
+        let len = match resp_len {
+          Ok(len) => len,
+          Err(_) => {
+            unsafe {
+              EVENT_CB.unwrap()(
+                Box::new(Err(ErrorMessage {
+                  code: 1002,
+                  message: CString::new("Failed to write STUN response").unwrap(),
+                })),
+                Box::new(Some(CString::new("stun_error").unwrap())),
+              );
+            }
+            return;
+          }
+        };
+        packet_buffer.truncate(len);
         self
           .outgoing_udp
           .push_back((packet_buffer.into_owned(), remote_addr));
 
         match self.clients.entry(remote_addr) {
           HashMapEntry::Vacant(vacant) => {
-            if self.cb.is_some() {
-              self.cb.as_mut().unwrap()(
-                Box::new(Ok(SenderMessage {
-                  status: 1,
-                  message: Some(CString::new(remote_addr.ip().to_string()).unwrap()),
-                })),
-                Box::new(Some(CString::new("new_client").unwrap())),
-              );
-            }
-            vacant.insert(
-              Client::new(&self.ssl_acceptor, self.buffer_pool.clone(), remote_addr)
-                .expect("could not create new client instance"),
+            let client = Client::new(
+              &self.ssl_acceptor,
+              self.buffer_pool.clone(),
+              remote_addr,
+              unsafe { EVENT_CB },
             );
+            match client {
+              Ok(cl) => {
+                vacant.insert(cl);
+              }
+              Err(err) => unsafe {
+                EVENT_CB.as_mut().unwrap()(
+                  Box::new(Err(ErrorMessage {
+                    code: 1002,
+                    message: CString::new(err.to_string()).unwrap(),
+                  })),
+                  Box::new(Some(CString::new("stun_error").unwrap())),
+                );
+              },
+            }
           }
           HashMapEntry::Occupied(_) => {}
         }
@@ -514,7 +536,6 @@ impl Server {
       for (remote_addr, client) in &mut self.clients {
         if let Err(_err) = client.generate_periodic() {
           if !client.shutdown_started() {
-            // log::warn!("error for client {}, shutting down: {}", remote_addr, err);
             let _ = client.start_shutdown();
           }
         }
@@ -580,13 +601,26 @@ impl Server {
       None
     }
   }
+  //create a function that shutdowns every client no matter what, and cleans sessios/clients Hashmaps
+  pub fn shutdown(&mut self) {
+    for client in self.clients.values_mut() {
+      let _ = client.start_shutdown();
+    }
+    self.clients.clear();
+    self.sessions.clear();
+    drop(self.udp_socket.as_ref());
+    drop(self);
+  }
 }
 
-const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_millis(800);
-const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
+const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
+const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(20);
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
-const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_millis(100);
-const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_millis(100);
+const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_millis(500);
+const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_millis(500);
+pub static mut EVENT_CB: Option<
+  extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>),
+> = None;
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 struct SessionKey {

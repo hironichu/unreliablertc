@@ -1,6 +1,7 @@
 use std::{
   collections::VecDeque,
   error::Error,
+  ffi::CString,
   fmt,
   io::{Error as IoError, ErrorKind as IoErrorKind, Read, Write},
   iter::Iterator,
@@ -18,10 +19,16 @@ use openssl::{
 };
 use rand::{thread_rng, Rng};
 
-use crate::buffer_pool::{BufferPool, OwnedBuffer};
-use crate::sctp::{
-  read_sctp_packet, write_sctp_packet, SctpChunk, SctpPacket, SctpWriteError,
-  SCTP_FLAG_BEGIN_FRAGMENT, SCTP_FLAG_COMPLETE_UNRELIABLE, SCTP_FLAG_END_FRAGMENT,
+use crate::{
+  buffer_pool::{BufferPool, OwnedBuffer},
+  SenderMessage,
+};
+use crate::{
+  sctp::{
+    read_sctp_packet, write_sctp_packet, SctpChunk, SctpPacket, SctpWriteError,
+    SCTP_FLAG_BEGIN_FRAGMENT, SCTP_FLAG_COMPLETE_UNRELIABLE, SCTP_FLAG_END_FRAGMENT,
+  },
+  ErrorMessage,
 };
 
 /// Heartbeat packets will be generated at a maximum of this rate (if the connection is otherwise
@@ -50,6 +57,8 @@ pub const MAX_MESSAGE_LEN: usize = MAX_SCTP_PACKET_SIZE - SCTP_MESSAGE_OVERHEAD;
 
 pub const DATA_CHANNEL_OPEN_FAILED: u16 = 5000;
 pub const DATA_CHANNEL_ERROR_NEGOTIATION_FAILED: u8 = 2;
+
+use crate::server::EVENT_CB;
 #[derive(Debug)]
 pub enum ClientError {
   TlsError(SslError),
@@ -101,7 +110,13 @@ impl Client {
     ssl_acceptor: &SslAcceptor,
     buffer_pool: BufferPool,
     remote_addr: SocketAddr,
+    cb: Option<extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>)>,
   ) -> Result<Client, OpenSslErrorStack> {
+    if cb.is_some() {
+      unsafe {
+        EVENT_CB = cb;
+      }
+    }
     match ssl_acceptor.accept(ClientSslPackets {
       buffer_pool: buffer_pool.clone(),
       incoming_udp: VecDeque::new(),
@@ -112,23 +127,26 @@ impl Client {
       Err(HandshakeError::Failure(_)) => {
         unreachable!("handshake cannot fail before starting")
       }
-      Err(HandshakeError::WouldBlock(mid_handshake)) => Ok(Client {
-        buffer_pool,
-        _remote_addr: remote_addr,
-        ssl_state: ClientSslState::Handshake(mid_handshake),
-        client_state: ClientState {
-          last_activity: Instant::now(),
-          last_sent: Instant::now(),
-          last_received: Instant::now(),
-          received_messages: Vec::new(),
-          sctp_state: SctpState::Shutdown,
-          sctp_local_port: 0,
-          sctp_remote_port: 0,
-          sctp_local_verification_tag: 0,
-          sctp_remote_verification_tag: 0,
-          sctp_local_tsn: 0,
-          sctp_remote_tsn: 0,
-        },
+      Err(HandshakeError::WouldBlock(mid_handshake)) => Ok({
+        Client {
+          buffer_pool,
+          _remote_addr: remote_addr,
+          ssl_state: ClientSslState::Handshake(mid_handshake),
+          client_state: ClientState {
+            sctp_remote_address: remote_addr,
+            last_activity: Instant::now(),
+            last_sent: Instant::now(),
+            last_received: Instant::now(),
+            received_messages: Vec::new(),
+            sctp_state: SctpState::Shutdown,
+            sctp_local_port: 0,
+            sctp_remote_port: 0,
+            sctp_local_verification_tag: 0,
+            sctp_remote_verification_tag: 0,
+            sctp_local_tsn: 0,
+            sctp_remote_tsn: 0,
+          },
+        }
       }),
     }
   }
@@ -172,10 +190,45 @@ impl Client {
             if err.code() == ErrorCode::ZERO_RETURN {
               ClientSslState::Shutdown
             } else {
+              unsafe {
+                EVENT_CB.unwrap()(
+                  Box::new(Err(ErrorMessage {
+                    code: 300,
+                    message: CString::new(
+                      CString::new(format!(
+                        "{}:{}",
+                        self._remote_addr.ip(),
+                        self._remote_addr.port()
+                      ))
+                      .unwrap(),
+                    )
+                    .unwrap(),
+                  })),
+                  Box::new(Some(CString::new("client_shutdown_error").unwrap())),
+                );
+              }
               return Err(ssl_err_to_client_err(err));
             }
           }
-          Ok(res) => ClientSslState::ShuttingDown(ssl_stream, res),
+          Ok(res) => {
+            unsafe {
+              EVENT_CB.unwrap()(
+                Box::new(Ok(SenderMessage {
+                  status: 1,
+                  message: Box::new(Some(
+                    CString::new(format!(
+                      "{}:{}",
+                      self._remote_addr.ip(),
+                      self._remote_addr.port()
+                    ))
+                    .unwrap(),
+                  )),
+                })),
+                Box::new(Some(CString::new("client_shutdown").unwrap())),
+              );
+            }
+            ClientSslState::ShuttingDown(ssl_stream, res)
+          }
         }
       }
       prev_state => {
@@ -381,6 +434,8 @@ pub struct ClientState {
 
   sctp_local_port: u16,
   sctp_remote_port: u16,
+
+  sctp_remote_address: SocketAddr,
 
   sctp_local_verification_tag: u32,
   sctp_remote_verification_tag: u32,
@@ -606,6 +661,22 @@ fn receive_sctp_packet(
           if proto_id == DATA_CHANNEL_PROTO_CONTROL {
             if !user_data.is_empty() {
               if user_data[0] == DATA_CHANNEL_MESSAGE_OPEN {
+                unsafe {
+                  EVENT_CB.unwrap()(
+                    Box::new(Ok(SenderMessage {
+                      status: 1,
+                      message: Box::new(Some(
+                        CString::new(format!(
+                          "{}:{}",
+                          client_state.sctp_remote_address.ip(),
+                          client_state.sctp_remote_address.port()
+                        ))
+                        .unwrap(),
+                      )),
+                    })),
+                    Box::new(Some(CString::new("client_datachannel_open").unwrap())),
+                  )
+                }
                 send_sctp_packet(
                   &buffer_pool,
                   ssl_stream,

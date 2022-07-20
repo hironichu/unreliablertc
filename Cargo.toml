@@ -7,7 +7,7 @@ description = "UDP-like (unreliable, unordered) communication between Javascript
 repository = "https://github.com/kyren/webrtc-unreliable"
 documentation = "https://docs.rs/webrtc-unreliable"
 readme = "README.md"
-keywords = ["wasm", "webrtc"]
+keywords = ["rust", "webrtc"]
 license = "MIT"
 
 [env]
@@ -18,9 +18,11 @@ OPENSSL_DIR = { value = "webrtc-unreliable\\openssl", relative = true }
 OPENSSL_STATIC = "1"
 
 [dependencies]
+serde = { version = "1.0", features = ["derive"] }
 async-io = "1.7.0"
 byteorder = "1.4.3"
 crc = "3.0.0"
+serde_json = "1.0"
 futures-channel = { version = "0.3.21", features = ["sink"] }
 futures-core = { version = "0.3.21" }
 futures-util = { version = "0.3.21", features = ["sink"] }
