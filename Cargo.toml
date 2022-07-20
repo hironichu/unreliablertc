@@ -11,10 +11,10 @@ keywords = ["rust", "webrtc"]
 license = "MIT"
 
 [env]
-OPENSSL_LIB_DIR =  { value = "webrtc-unreliable\\openssl\\lib",  relative = true }
-OPENSSL_INCLUDE_DIR = { value = "webrtc-unreliable\\openssl\\include", relative = true }
-OPENSSL_STATIC_LIB_DIR = { value = "webrtc-unreliable\\openssl\\lib", relative = true }
-OPENSSL_DIR = { value = "webrtc-unreliable\\openssl", relative = true }           
+OPENSSL_LIB_DIR =  { value = "webrtc-unreliable\\openssl\\lib",  relative = true, force = false }
+OPENSSL_INCLUDE_DIR = { value = "webrtc-unreliable\\openssl\\include", relative = true, force = false }
+OPENSSL_STATIC_LIB_DIR = { value = "webrtc-unreliable\\openssl\\lib", relative = true, force = false }
+OPENSSL_DIR = { value = "webrtc-unreliable\\openssl", relative = true, force = false }           
 OPENSSL_STATIC = "1"
 
 [dependencies]
