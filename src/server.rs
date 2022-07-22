@@ -217,7 +217,7 @@ impl Server {
     }
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
     let sock = UdpSocket::bind(&listen_addr).expect("couldn't bind to address");
-    sock.set_ttl(120).expect("couldn't set ttl");
+
     let udp_socket = Async::new(sock)?;
     let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
 
@@ -463,51 +463,41 @@ impl Server {
           session.server_passwd.as_bytes(),
           &mut packet_buffer,
         );
-        let len = match resp_len {
-          Ok(len) => len,
-          Err(_) => {
-            unsafe {
-              EVENT_CB.unwrap()(
-                Box::new(Err(ErrorMessage {
-                  code: 1002,
-                  message: CString::new("Failed to write STUN response").unwrap(),
-                })),
-                Box::new(Some(CString::new("stun_error").unwrap())),
-              );
-            }
-            return;
-          }
-        };
-        packet_buffer.truncate(len);
-        self
-          .outgoing_udp
-          .push_back((packet_buffer.into_owned(), remote_addr));
+        match resp_len {
+          Ok(len) => {
+            packet_buffer.truncate(len);
+            self
+              .outgoing_udp
+              .push_back((packet_buffer.into_owned(), remote_addr));
 
-        match self.clients.entry(remote_addr) {
-          HashMapEntry::Vacant(vacant) => {
-            let client = Client::new(
-              &self.ssl_acceptor,
-              self.buffer_pool.clone(),
-              remote_addr,
-              unsafe { EVENT_CB },
-            );
-            match client {
-              Ok(cl) => {
-                vacant.insert(cl);
-              }
-              Err(err) => unsafe {
-                EVENT_CB.as_mut().unwrap()(
-                  Box::new(Err(ErrorMessage {
-                    code: 1002,
-                    message: CString::new(err.to_string()).unwrap(),
-                  })),
-                  Box::new(Some(CString::new("stun_error").unwrap())),
+            match self.clients.entry(remote_addr) {
+              HashMapEntry::Vacant(vacant) => {
+                let client = Client::new(
+                  &self.ssl_acceptor,
+                  self.buffer_pool.clone(),
+                  remote_addr,
+                  unsafe { EVENT_CB },
                 );
-              },
+                match client {
+                  Ok(cl) => {
+                    vacant.insert(cl);
+                  }
+                  Err(err) => unsafe {
+                    EVENT_CB.as_mut().unwrap()(
+                      Box::new(Err(ErrorMessage {
+                        code: 1002,
+                        message: CString::new(err.to_string()).unwrap(),
+                      })),
+                      Box::new(Some(CString::new("stun_error").unwrap())),
+                    );
+                  },
+                }
+              }
+              HashMapEntry::Occupied(_) => {}
             }
           }
-          HashMapEntry::Occupied(_) => {}
-        }
+          Err(_) => {}
+        };
       }
     } else {
       if let Some(client) = self.clients.get_mut(&remote_addr) {
@@ -562,8 +552,18 @@ impl Server {
         if !client.is_shutdown() && client.last_activity().elapsed() < RTC_CONNECTION_TIMEOUT {
           true
         } else {
-          if !client.is_shutdown() {
-            //
+          if !client.shutdown_started() {
+            unsafe {
+              EVENT_CB.unwrap()(
+                Box::new(Ok(SenderMessage {
+                  status: 1,
+                  message: Box::new(Some(
+                    CString::new(format!("{}:{}", _remote_addr.ip(), _remote_addr.port())).unwrap(),
+                  )),
+                })),
+                Box::new(Some(CString::new("client_datachannel_timeout").unwrap())),
+              );
+            }
           }
           false
         }
@@ -601,7 +601,8 @@ impl Server {
       None
     }
   }
-  //create a function that shutdowns every client no matter what, and cleans sessios/clients Hashmaps
+  /// Shutdown the whole server, clear sessions and clients.
+  ///
   pub fn shutdown(&mut self) {
     for client in self.clients.values_mut() {
       let _ = client.start_shutdown();
@@ -613,11 +614,11 @@ impl Server {
   }
 }
 
-const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(5);
-const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(20);
-const CLEANUP_INTERVAL: Duration = Duration::from_secs(5);
-const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_millis(500);
-const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_millis(500);
+const RTC_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
+const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
+const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_secs(1);
+const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_secs(1);
 pub static mut EVENT_CB: Option<
   extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>),
 > = None;

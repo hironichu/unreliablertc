@@ -190,23 +190,6 @@ impl Client {
             if err.code() == ErrorCode::ZERO_RETURN {
               ClientSslState::Shutdown
             } else {
-              unsafe {
-                EVENT_CB.unwrap()(
-                  Box::new(Err(ErrorMessage {
-                    code: 300,
-                    message: CString::new(
-                      CString::new(format!(
-                        "{}:{}",
-                        self._remote_addr.ip(),
-                        self._remote_addr.port()
-                      ))
-                      .unwrap(),
-                    )
-                    .unwrap(),
-                  })),
-                  Box::new(Some(CString::new("client_shutdown_error").unwrap())),
-                );
-              }
               return Err(ssl_err_to_client_err(err));
             }
           }
@@ -224,7 +207,7 @@ impl Client {
                     .unwrap(),
                   )),
                 })),
-                Box::new(Some(CString::new("client_shutdown").unwrap())),
+                Box::new(Some(CString::new("client_datachannel_close").unwrap())),
               );
             }
             ClientSslState::ShuttingDown(ssl_stream, res)
