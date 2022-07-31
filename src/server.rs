@@ -16,6 +16,7 @@ use futures_channel::mpsc;
 use futures_util::{pin_mut, select, FutureExt, SinkExt, StreamExt};
 use openssl::ssl::SslAcceptor;
 use rand::thread_rng;
+use socket2::{Domain, SockAddr, Socket, Type};
 
 use crate::{
   buffer_pool::{BufferHandle, BufferPool, OwnedBuffer},
@@ -216,7 +217,20 @@ impl Server {
       }
     }
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
-    let sock = UdpSocket::bind(&listen_addr).expect("couldn't bind to address");
+
+    let inner = Socket::new(Domain::IPV4, Type::DGRAM, None).unwrap();
+    #[cfg(any(unix))]
+    {
+      inner.set_reuse_address(true).unwrap();
+      inner.set_reuse_port(true).unwrap();
+    }
+    #[cfg(any(windows))]
+    inner.set_reuse_address(true).unwrap();
+
+    let address = SockAddr::from(listen_addr);
+    inner.bind(&address)?;
+
+    let sock = inner.into();
 
     let udp_socket = Async::new(sock)?;
     let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
