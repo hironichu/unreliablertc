@@ -218,13 +218,10 @@ impl Server {
     }
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
 
-    let inner = Socket::new(Domain::IPV4, Type::DGRAM, None).unwrap();
+    let inner = Socket::new(Domain::for_address(listen_addr), Type::DGRAM, None).unwrap();
     #[cfg(any(unix))]
-    {
-      inner.set_reuse_address(true).unwrap();
-      inner.set_reuse_port(true).unwrap();
-    }
-    #[cfg(any(windows))]
+    inner.set_reuse_port(true).unwrap();
+
     inner.set_reuse_address(true).unwrap();
 
     let address = SockAddr::from(listen_addr);
@@ -624,7 +621,6 @@ impl Server {
     self.clients.clear();
     self.sessions.clear();
     drop(self.udp_socket.as_ref());
-    drop(self);
   }
 }
 
