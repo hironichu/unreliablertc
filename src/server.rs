@@ -1,5 +1,5 @@
+use atone::Vc as VecDeque;
 use std::{
-  collections::{hash_map::Entry as HashMapEntry, HashMap, VecDeque},
   convert::AsRef,
   error::Error,
   ffi::CString,
@@ -14,6 +14,7 @@ use std::{
 use async_io::Async;
 use futures_channel::mpsc;
 use futures_util::{pin_mut, select, FutureExt, SinkExt, StreamExt};
+use hashbrown::hash_map::{Entry as HashMapEntry, HashMap};
 use openssl::ssl::SslAcceptor;
 use rand::thread_rng;
 use socket2::{Domain, SockAddr, Socket, Type};
@@ -208,7 +209,7 @@ impl Server {
   pub fn new(
     listen_addr: SocketAddr,
     public_addr: SocketAddr,
-    cb: Option<extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>)>,
+    cb: Option<extern "C" fn(u32, *mut u8, u32)>,
   ) -> Result<Server, IoError> {
     const SESSION_BUFFER_SIZE: usize = 8;
     if cb.is_some() {
@@ -273,13 +274,13 @@ impl Server {
   }
 
   /// List all the currently fully established client connections.
-  pub fn connected_clients(&mut self) -> Vec<&SocketAddr> {
+  pub fn connected_clients(&mut self) -> String {
     self
       .clients
       .iter_mut()
       .filter(|(_, c)| c.is_established())
-      .map(|(addr, _)| addr)
-      .collect()
+      .map(|(addr, _)| addr.to_string() + ",")
+      .collect::<String>()
   }
 
   /// Returns true if the client has a completely established WebRTC data channel connection and
@@ -494,13 +495,14 @@ impl Server {
                     vacant.insert(cl);
                   }
                   Err(err) => unsafe {
-                    EVENT_CB.as_mut().unwrap()(
-                      Box::new(Err(ErrorMessage {
-                        code: 1002,
-                        message: CString::new(err.to_string()).unwrap(),
-                      })),
-                      Box::new(Some(CString::new("stun_error").unwrap())),
-                    );
+                    let mut msg = err.to_string();
+                    EVENT_CB.as_mut().unwrap()(0, msg.as_mut_ptr(), msg.len() as u32)
+                    //   Box::new(Err(ErrorMessage {
+                    //     code: 1002,
+                    //     message: CString::new(err.to_string()).unwrap(),
+                    //   })),
+                    //   Box::new(Some(CString::new("stun_error").unwrap())),
+                    // );
                   },
                 }
               }
@@ -559,21 +561,14 @@ impl Server {
         }
       });
 
-      self.clients.retain(|_remote_addr, client| {
+      self.clients.retain(|remote_addr, client| {
         if !client.is_shutdown() && client.last_activity().elapsed() < RTC_CONNECTION_TIMEOUT {
           true
         } else {
           if !client.shutdown_started() {
             unsafe {
-              EVENT_CB.unwrap()(
-                Box::new(Ok(SenderMessage {
-                  status: 1,
-                  message: Box::new(Some(
-                    CString::new(format!("{}:{}", _remote_addr.ip(), _remote_addr.port())).unwrap(),
-                  )),
-                })),
-                Box::new(Some(CString::new("client_datachannel_timeout").unwrap())),
-              );
+              let mut msg = format!("{}:{}", remote_addr.ip(), remote_addr.port());
+              EVENT_CB.unwrap()(1, msg.as_mut_ptr(), msg.len() as u32);
             }
           }
           false
@@ -629,9 +624,7 @@ const RTC_SESSION_TIMEOUT: Duration = Duration::from_secs(30);
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(10);
 const PERIODIC_PACKET_INTERVAL: Duration = Duration::from_secs(1);
 const PERIODIC_TIMER_INTERVAL: Duration = Duration::from_secs(1);
-pub static mut EVENT_CB: Option<
-  extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>),
-> = None;
+pub static mut EVENT_CB: Option<extern "C" fn(u32, *mut u8, u32)> = None;
 
 #[derive(Eq, PartialEq, Hash, Clone, Debug)]
 struct SessionKey {

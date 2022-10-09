@@ -1,15 +1,4 @@
-use std::{
-  collections::VecDeque,
-  error::Error,
-  ffi::CString,
-  fmt,
-  io::{Error as IoError, ErrorKind as IoErrorKind, Read, Write},
-  iter::Iterator,
-  mem,
-  net::SocketAddr,
-  time::{Duration, Instant},
-};
-
+use atone::Vc as VecDeque;
 use openssl::{
   error::ErrorStack as OpenSslErrorStack,
   ssl::{
@@ -18,17 +7,22 @@ use openssl::{
   },
 };
 use rand::{thread_rng, Rng};
+use std::{
+  error::Error,
+  fmt,
+  io::{Error as IoError, ErrorKind as IoErrorKind, Read, Write},
+  iter::Iterator,
+  mem,
+  net::SocketAddr,
+  time::{Duration, Instant},
+};
 
 use crate::{
   buffer_pool::{BufferPool, OwnedBuffer},
-  SenderMessage,
-};
-use crate::{
   sctp::{
     read_sctp_packet, write_sctp_packet, SctpChunk, SctpPacket, SctpWriteError,
     SCTP_FLAG_BEGIN_FRAGMENT, SCTP_FLAG_COMPLETE_UNRELIABLE, SCTP_FLAG_END_FRAGMENT,
   },
-  ErrorMessage,
 };
 
 /// Heartbeat packets will be generated at a maximum of this rate (if the connection is otherwise
@@ -110,7 +104,7 @@ impl Client {
     ssl_acceptor: &SslAcceptor,
     buffer_pool: BufferPool,
     remote_addr: SocketAddr,
-    cb: Option<extern "C" fn(Box<Result<SenderMessage, ErrorMessage>>, Box<Option<CString>>)>,
+    cb: Option<extern "C" fn(u32, *mut u8, u32)>,
   ) -> Result<Client, OpenSslErrorStack> {
     if cb.is_some() {
       unsafe {
@@ -195,20 +189,8 @@ impl Client {
           }
           Ok(res) => {
             unsafe {
-              EVENT_CB.unwrap()(
-                Box::new(Ok(SenderMessage {
-                  status: 1,
-                  message: Box::new(Some(
-                    CString::new(format!(
-                      "{}:{}",
-                      self._remote_addr.ip(),
-                      self._remote_addr.port()
-                    ))
-                    .unwrap(),
-                  )),
-                })),
-                Box::new(Some(CString::new("client_datachannel_close").unwrap())),
-              );
+              let mut msg = "client_datachannel_close".to_string();
+              EVENT_CB.unwrap()(2, msg.as_mut_ptr(), msg.len() as u32);
             }
             ClientSslState::ShuttingDown(ssl_stream, res)
           }
@@ -645,20 +627,12 @@ fn receive_sctp_packet(
             if !user_data.is_empty() {
               if user_data[0] == DATA_CHANNEL_MESSAGE_OPEN {
                 unsafe {
-                  EVENT_CB.unwrap()(
-                    Box::new(Ok(SenderMessage {
-                      status: 1,
-                      message: Box::new(Some(
-                        CString::new(format!(
-                          "{}:{}",
-                          client_state.sctp_remote_address.ip(),
-                          client_state.sctp_remote_address.port()
-                        ))
-                        .unwrap(),
-                      )),
-                    })),
-                    Box::new(Some(CString::new("client_datachannel_open").unwrap())),
-                  )
+                  let mut msg = format!(
+                    "{}:{}",
+                    client_state.sctp_remote_address.ip(),
+                    client_state.sctp_remote_address.port()
+                  );
+                  EVENT_CB.unwrap()(0, msg.as_mut_ptr(), msg.len() as u32)
                 }
                 send_sctp_packet(
                   &buffer_pool,
