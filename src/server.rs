@@ -568,7 +568,7 @@ impl Server {
           if !client.shutdown_started() {
             unsafe {
               let mut msg = format!("{}:{}", remote_addr.ip(), remote_addr.port());
-              EVENT_CB.unwrap()(1, msg.as_mut_ptr(), msg.len() as u32);
+              EVENT_CB.unwrap()(1002, msg.as_mut_ptr(), msg.len() as u32);
             }
           }
           false

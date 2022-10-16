@@ -189,8 +189,13 @@ impl Client {
           }
           Ok(res) => {
             unsafe {
-              let mut msg = "client_datachannel_close".to_string();
-              EVENT_CB.unwrap()(2, msg.as_mut_ptr(), msg.len() as u32);
+              // let mut msg = "client_datachannel_close".to_string();
+              let mut msg = format!(
+                "{}:{}",
+                self.client_state.sctp_remote_address.ip(),
+                self.client_state.sctp_remote_address.port()
+              );
+              EVENT_CB.unwrap()(1003, msg.as_mut_ptr(), msg.len() as u32);
             }
             ClientSslState::ShuttingDown(ssl_stream, res)
           }
@@ -632,7 +637,7 @@ fn receive_sctp_packet(
                     client_state.sctp_remote_address.ip(),
                     client_state.sctp_remote_address.port()
                   );
-                  EVENT_CB.unwrap()(0, msg.as_mut_ptr(), msg.len() as u32)
+                  EVENT_CB.unwrap()(1001, msg.as_mut_ptr(), msg.len() as u32)
                 }
                 send_sctp_packet(
                   &buffer_pool,

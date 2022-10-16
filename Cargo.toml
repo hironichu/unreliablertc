@@ -28,7 +28,7 @@ futures-channel = { version = "0.3.24", features = ["sink"] }
 futures-core = { version = "0.3.24" }
 futures-util = { version = "0.3.24", features = ["sink"] }
 futures = "0.3.24"
-openssl = { version = "0.10.42" }
+openssl = { version = "0.10.41" }
 rand = "0.8.5"
 socket2 = "0.4.7"
 hashbrown = "0.12.3"
