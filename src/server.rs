@@ -220,10 +220,15 @@ impl Server {
     let crypto = Crypto::init().expect("WebRTC server could not initialize OpenSSL primitives");
 
     let inner = Socket::new(Domain::for_address(listen_addr), Type::DGRAM, None).unwrap();
-    #[cfg(any(unix))]
-    inner.set_reuse_port(true).unwrap();
 
-    inner.set_reuse_address(true).unwrap();
+    //This is temporary disable due to probleme with Sessions management.
+    //the sessions should be handled in the Deno side using a single UDP socket and a Map to store each request,
+    //then wait until we get a new UDP connection in Rust side to handle the DTLS part.
+
+    // #[cfg(any(unix))]
+    // inner.set_reuse_port(true).unwrap();
+
+    // inner.set_reuse_address(true).unwrap();
 
     let address = SockAddr::from(listen_addr);
     inner.bind(&address)?;
@@ -497,12 +502,6 @@ impl Server {
                   Err(err) => unsafe {
                     let mut msg = err.to_string();
                     EVENT_CB.as_mut().unwrap()(0, msg.as_mut_ptr(), msg.len() as u32)
-                    //   Box::new(Err(ErrorMessage {
-                    //     code: 1002,
-                    //     message: CString::new(err.to_string()).unwrap(),
-                    //   })),
-                    //   Box::new(Some(CString::new("stun_error").unwrap())),
-                    // );
                   },
                 }
               }

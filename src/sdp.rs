@@ -10,49 +10,31 @@ pub struct SdpFields {
 }
 
 pub fn parse_sdp_fields(body: &str) -> Result<SdpFields, Error> {
-  let reader = body.as_bytes();
-  const MAX_SDP_LINE: usize = 512;
-
-  fn after_prefix<'a>(s: &'a [u8], prefix: &[u8]) -> Option<&'a [u8]> {
-    if s.starts_with(prefix) {
-      Some(&s[prefix.len()..])
-    } else {
-      None
+  //ice-ufrag
+  //ice-pwd
+  //a=mid:
+  //find the three fields in the string body
+  let mut ice_ufrag = String::new();
+  let mut ice_passwd = String::new();
+  let mut mid = String::new();
+  let mut lines = body.lines();
+  while let Some(line) = lines.next() {
+    if line.starts_with("a=ice-ufrag:") {
+      ice_ufrag = line[12..].to_string();
+    } else if line.starts_with("a=ice-pwd:") {
+      ice_passwd = line[10..].to_string();
+    } else if line.starts_with("a=mid:") {
+      mid = line[6..].to_string();
     }
   }
-  let mut line_buf = Vec::new();
-  line_buf.reserve(MAX_SDP_LINE);
-  let mut found_ice_ufrag = None;
-  let mut found_ice_passwd = None;
-  let mut found_mid = None;
-  for &c in reader.as_ref() {
-    if c == b'\r' || c == b'\n' {
-      if !line_buf.is_empty() {
-        if let Some(ice_ufrag) = after_prefix(&line_buf, b"a=ice-ufrag:") {
-          found_ice_ufrag = Some(String::from_utf8(ice_ufrag.to_vec())?);
-        }
-        if let Some(ice_passwd) = after_prefix(&line_buf, b"a=ice-pwd:") {
-          found_ice_passwd = Some(String::from_utf8(ice_passwd.to_vec())?);
-        }
-        if let Some(mid) = after_prefix(&line_buf, b"a=mid:") {
-          found_mid = Some(String::from_utf8(mid.to_vec())?);
-        }
-        line_buf.clear();
-      }
-    } else {
-      if line_buf.len() < MAX_SDP_LINE {
-        line_buf.push(c);
-      }
-    }
+  if ice_ufrag.is_empty() || ice_passwd.is_empty() || mid.is_empty() {
+    return Err("missing ice-ufrag, ice-pwd, or mid".into());
   }
-  match (found_ice_ufrag, found_ice_passwd, found_mid) {
-    (Some(ice_ufrag), Some(ice_passwd), Some(mid)) => Ok(SdpFields {
-      ice_ufrag,
-      ice_passwd,
-      mid,
-    }),
-    _ => Err("not all SDP fields provided".into()),
-  }
+  Ok(SdpFields {
+    ice_ufrag,
+    ice_passwd,
+    mid,
+  })
 }
 
 pub fn gen_sdp_response<R: Rng>(
