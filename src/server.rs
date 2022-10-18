@@ -2,7 +2,6 @@ use atone::Vc as VecDeque;
 use std::{
   convert::AsRef,
   error::Error,
-  ffi::CString,
   fmt,
   io::{Error as IoError, ErrorKind as IoErrorKind},
   net::{SocketAddr, UdpSocket},
@@ -12,8 +11,7 @@ use std::{
 };
 
 use async_io::Async;
-use futures_channel::mpsc;
-use futures_util::{pin_mut, select, FutureExt, SinkExt, StreamExt};
+use futures_util::{pin_mut, select, FutureExt, StreamExt};
 use hashbrown::hash_map::{Entry as HashMapEntry, HashMap};
 use openssl::ssl::SslAcceptor;
 use rand::thread_rng;
@@ -109,17 +107,8 @@ impl<'a> AsRef<[u8]> for MessageBuffer<'a> {
 #[repr(C)]
 pub struct ErrorMessage {
   pub code: i32,
-  pub message: CString,
+  pub message: String,
 }
-///
-/// Struct representing a SenderMessage
-///
-#[repr(C)]
-pub struct SenderMessage {
-  pub status: i32,
-  pub message: Box<Option<CString>>,
-}
-
 pub struct MessageResult<'a> {
   pub message: MessageBuffer<'a>,
   pub message_type: MessageType,
@@ -130,7 +119,7 @@ pub struct MessageResult<'a> {
 pub struct SessionEndpoint {
   public_addr: SocketAddr,
   cert_fingerprint: Arc<String>,
-  session_sender: mpsc::Sender<IncomingSession>,
+  session_sender: kanal::Sender<IncomingSession>,
 }
 
 impl SessionEndpoint {
@@ -175,9 +164,7 @@ impl SessionEndpoint {
     };
 
     let incoming_session = incoming_session;
-    let mut session_sender = self.session_sender.clone();
-    let handler =
-      futures::executor::block_on(async move { session_sender.send(incoming_session).await });
+    let handler = self.session_sender.send(incoming_session);
     if handler.is_err() {
       return Err(SessionError::Disconnected);
     }
@@ -187,7 +174,7 @@ impl SessionEndpoint {
 pub struct Server {
   udp_socket: Async<UdpSocket>,
   session_endpoint: SessionEndpoint,
-  incoming_session_stream: mpsc::Receiver<IncomingSession>,
+  incoming_session_stream: kanal::Receiver<IncomingSession>,
   ssl_acceptor: SslAcceptor,
   outgoing_udp: VecDeque<(OwnedBuffer, SocketAddr)>,
   incoming_rtc: VecDeque<(OwnedBuffer, SocketAddr, MessageType)>,
@@ -236,7 +223,7 @@ impl Server {
     let sock = inner.into();
 
     let udp_socket = Async::new(sock)?;
-    let (session_sender, session_receiver) = mpsc::channel(SESSION_BUFFER_SIZE);
+    let (session_sender, session_receiver) = kanal::bounded(SESSION_BUFFER_SIZE);
 
     let session_endpoint = SessionEndpoint {
       public_addr,
@@ -403,8 +390,9 @@ impl Server {
       let timer_next = self.periodic_timer.next().fuse();
       pin_mut!(timer_next);
 
+      let recv = self.incoming_session_stream.clone_async();
       select! {
-        incoming_session = self.incoming_session_stream.next() => {
+        incoming_session = recv.recv().fuse() => {
           Next::IncomingSession(
             incoming_session.expect("connection to SessionEndpoint has closed")
           )

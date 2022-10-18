@@ -10,6 +10,5 @@ mod util;
 
 pub use client::{MessageType, MAX_MESSAGE_LEN};
 pub use server::{
-  ErrorMessage, MessageBuffer, MessageResult, SendError, SenderMessage, Server, SessionEndpoint,
-  SessionError,
+  ErrorMessage, MessageBuffer, MessageResult, SendError, Server, SessionEndpoint, SessionError,
 };
