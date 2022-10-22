@@ -1,5 +1,5 @@
 use clap::{Arg, Command};
-use webrtc_unreliable::Server as RtcServer;
+use unreliablertc::Server as RtcServer;
 
 #[tokio::main]
 async fn main() {

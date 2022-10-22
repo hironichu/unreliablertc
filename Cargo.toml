@@ -1,20 +1,19 @@
 [package]
-name = "webrtc-unreliable"
-version = "0.5.2"
-authors = ["kyren <kerriganw@gmail.com>"]
+name = "unreliablertc"
+version = "0.6.0"
+authors = ["Hironichu <contact@ekko.pw>"]
 edition = "2018"
-description = "UDP-like (unreliable, unordered) communication between Javascript/WebAssembly and native Rust via WebRTC"
-repository = "https://github.com/kyren/webrtc-unreliable"
-documentation = "https://docs.rs/webrtc-unreliable"
+description = "UDP-like (unreliable, unordered) communication between Javascript/WebAssembly and native Rust via WebRTC (Forked of webrtc-unreliable)"
+repository = "https://github.com/hironichu/unreliablertc"
 readme = "README.md"
 keywords = ["rust", "webrtc"]
 license = "MIT"
 
 [env]
-OPENSSL_LIB_DIR =  { value = "webrtc-unreliable\\openssl\\lib",  relative = true, force = false }
-OPENSSL_INCLUDE_DIR = { value = "webrtc-unreliable\\openssl\\include", relative = true, force = false }
-OPENSSL_STATIC_LIB_DIR = { value = "webrtc-unreliable\\openssl\\lib", relative = true, force = false }
-OPENSSL_DIR = { value = "webrtc-unreliable\\openssl", relative = true, force = false }           
+OPENSSL_LIB_DIR =  { value = "unreliablertc\\openssl\\lib",  relative = true, force = false }
+OPENSSL_INCLUDE_DIR = { value = "unreliablertc\\openssl\\include", relative = true, force = false }
+OPENSSL_STATIC_LIB_DIR = { value = "unreliablertc\\openssl\\lib", relative = true, force = false }
+OPENSSL_DIR = { value = "unreliablertc\\openssl", relative = true, force = false }           
 OPENSSL_STATIC = "1"
 
 
