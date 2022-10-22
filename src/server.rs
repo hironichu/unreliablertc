@@ -119,7 +119,7 @@ pub struct MessageResult<'a> {
 pub struct SessionEndpoint {
   public_addr: SocketAddr,
   cert_fingerprint: Arc<String>,
-  session_sender: kanal::Sender<IncomingSession>,
+  session_sender: flume::Sender<IncomingSession>,
 }
 
 impl SessionEndpoint {
@@ -174,7 +174,7 @@ impl SessionEndpoint {
 pub struct Server {
   udp_socket: Async<UdpSocket>,
   session_endpoint: SessionEndpoint,
-  incoming_session_stream: kanal::Receiver<IncomingSession>,
+  incoming_session_stream: flume::Receiver<IncomingSession>,
   ssl_acceptor: SslAcceptor,
   outgoing_udp: VecDeque<(OwnedBuffer, SocketAddr)>,
   incoming_rtc: VecDeque<(OwnedBuffer, SocketAddr, MessageType)>,
@@ -223,7 +223,7 @@ impl Server {
     let sock = inner.into();
 
     let udp_socket = Async::new(sock)?;
-    let (session_sender, session_receiver) = kanal::bounded(SESSION_BUFFER_SIZE);
+    let (session_sender, session_receiver) = flume::bounded(SESSION_BUFFER_SIZE);
 
     let session_endpoint = SessionEndpoint {
       public_addr,
@@ -390,9 +390,8 @@ impl Server {
       let timer_next = self.periodic_timer.next().fuse();
       pin_mut!(timer_next);
 
-      let recv = self.incoming_session_stream.clone_async();
       select! {
-        incoming_session = recv.recv().fuse() => {
+        incoming_session = self.incoming_session_stream.recv_async().fuse() => {
           Next::IncomingSession(
             incoming_session.expect("connection to SessionEndpoint has closed")
           )
