@@ -323,7 +323,8 @@ impl Server {
       .get_mut(remote_addr)
       .ok_or(SendError::ClientNotConnected)?;
 
-    match client.send_message(message_type, message) {
+    let send_result = client.send_message(message_type, message);
+    match send_result {
       Err(ClientError::NotConnected) | Err(ClientError::NotEstablished) => {
         return Err(SendError::ClientNotConnected).into();
       }
@@ -345,10 +346,8 @@ impl Server {
     self
       .outgoing_udp
       .extend(client.take_outgoing_packets().map(|p| (p, *remote_addr)));
-    match self.send_outgoing().await {
-      Ok(_) => Ok(()),
-      Err(_) => Err(SendError::ClientNotConnected).into(),
-    }
+    self.send_outgoing().await?;
+    Ok(())
   }
 
   /// Receive a WebRTC data channel message from any connected client.
@@ -365,9 +364,8 @@ impl Server {
     }
 
     let (message, remote_addr, message_type) = self.incoming_rtc.pop_front().unwrap();
-    let message = MessageBuffer(self.buffer_pool.adopt(message));
     return Ok(MessageResult {
-      message,
+      message: MessageBuffer(self.buffer_pool.adopt(message)),
       message_type,
       remote_addr,
     });
@@ -392,9 +390,7 @@ impl Server {
 
       select! {
         incoming_session = self.incoming_session_stream.recv_async().fuse() => {
-          Next::IncomingSession(
-            incoming_session.expect("connection to SessionEndpoint has closed")
-          )
+          Next::IncomingSession(incoming_session.expect("connection to SessionEndpoint has closed"))
         }
         res = recv_udp => {
           let (len, remote_addr) = res?;
@@ -500,18 +496,19 @@ impl Server {
       }
     } else {
       if let Some(client) = self.clients.get_mut(&remote_addr) {
+        let client = client;
         if let Err(_err) = client.receive_incoming_packet(packet_buffer.into_owned()) {
           if !client.shutdown_started() {
             let _ = client.start_shutdown();
           }
         }
+        let outgoing_packets = client.take_outgoing_packets();
         self
           .outgoing_udp
-          .extend(client.take_outgoing_packets().map(|p| (p, remote_addr)));
+          .extend(outgoing_packets.map(|p| (p, remote_addr)));
+        let incoming_messages = client.receive_messages();
         self.incoming_rtc.extend(
-          client
-            .receive_messages()
-            .map(|(message_type, message)| (message, remote_addr, message_type)),
+          incoming_messages.map(|(message_type, message)| (message, remote_addr, message_type)),
         );
       }
     }

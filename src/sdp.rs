@@ -10,10 +10,6 @@ pub struct SdpFields {
 }
 
 pub fn parse_sdp_fields(body: &str) -> Result<SdpFields, Error> {
-  //ice-ufrag
-  //ice-pwd
-  //a=mid:
-  //find the three fields in the string body
   let mut ice_ufrag = String::new();
   let mut ice_passwd = String::new();
   let mut mid = String::new();
