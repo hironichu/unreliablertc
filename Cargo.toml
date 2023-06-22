@@ -1,7 +1,7 @@
 [package]
 name = "unreliablertc"
-version = "0.6.0"
-authors = ["Hironichu <contact@ekko.pw>"]
+version = "0.6.1"
+authors = ["Hironichu <contact@hironichu.tech>"]
 edition = "2018"
 description = "UDP-like (unreliable, unordered) communication between Javascript/WebAssembly and native Rust via WebRTC (Forked of webrtc-unreliable)"
 repository = "https://github.com/hironichu/unreliablertc"
@@ -18,14 +18,14 @@ OPENSSL_STATIC = "1"
 
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
-async-io = "1.12"
+async-io = "1.13"
 byteorder = "1.4.3"
 crc = "3.0.0"
 serde_json = "1.0"
-futures-core = { version = "0.3.25" }
-futures-util = { version = "0.3.25", features = ["sink"] }
-futures = "0.3.24"
-openssl = { version = "0.10.41" }
+futures-core = { version = "0.3.27" }
+futures-util = { version = "0.3.27", features = ["sink"] }
+futures = "0.3.27"
+openssl = { version = "0.10.47" }
 rand = "0.8.5"
 socket2 = "0.5"
 hashbrown = "0.13"
